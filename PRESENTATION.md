@@ -1,53 +1,139 @@
-# Slide 1: Title Slide
-# StockSage: AI-Powered Multi-Agent Market Research & Advisory
-- **Domain:** Equity Research / Agentic Financial Advisory (NSE Focus)
-- **Architecture:** React (Frontend) + FastAPI (Backend) + Supabase (PostgreSQL & JWT Auth) + Multi-Agent Orchestration
-- **Status:** Milestone 1 — Core Scaffolding, Data Pipeline & Validation Complete
+# Slide 1: Project Overview & Milestone 1 Status
+## StockSage: AI-Powered Multi-Agent Stock Research Analyst
+- **Objective:** Build an agentic stock research and advisory platform focused on publicly listed NSE companies.
+- **Milestone 1 Scope:** Core Architecture Setup, Database Schema Implementation, Authentication Flow, and Market Data Retrieval with Automated Validation.
+- **Tech Stack:**
+  - **Frontend:** React.js (Vite), Material UI (Custom Light Theme), React Router v6.
+  - **Backend:** FastAPI, Pydantic v2, Python-Jose (JWT), yfinance, pandas.
+  - **Database & Auth:** Supabase (PostgreSQL 17) with Row Level Security (RLS) & JWT.
+- **Repository:** `https://github.com/vikas7516/stocksage` (Continuous Deployment Ready).
 
 ---
 
-# Slide 2: Problem Statement & Core Concept
-- **The Challenge:** Retail stock research is fragmented across chart indicators, quarterly reports, and breaking news.
-- **Our Solution:** A focused advisory platform coordinating multiple specialized AI agents.
-- **What StockSage IS:** An autonomous research analyst that collects evidence, cross-checks indicators, and compiles an audit-backed report.
-- **What StockSage IS NOT:** A trading terminal, broker (Zerodha/Groww), or automated trade execution system.
+# Slide 2: Milestone 1 Deliverables & Technical Progress
+We have completed all requirements specified for Milestone 1:
+
+1. **Frontend Scaffolding & Google-Style Interactive Search:**
+   - Dedicated landing page with clean architectural overview and advisory disclaimers.
+   - Non-scrollable Google-style search interface with **live dynamic auto-suggestion dropdown** as the user types.
+   - Animated multi-stage research preview modal communicating data pipeline progress.
+   - "Building in progress" dashboard with synchronized multi-gear SVG animations illustrating the multi-agent pipeline.
+2. **FastAPI Backend & Scaffolding:**
+   - Modular structure: routers (`auth`, `search`), models (`schemas`), and services (`market_data`).
+   - CORS middleware enabled for seamless frontend-backend communication.
+   - Health check endpoint (`GET /health`) for container uptime verification.
+3. **Stateless JWT Authentication Flow:**
+   - Client authenticates directly against Supabase Auth.
+   - FastAPI intercepts and verifies Supabase JWT signatures (`HS256`) via cryptographic middleware (`verify_jwt`), extracting user context statelessly without database session overhead.
 
 ---
 
-# Slide 3: Milestone 1 Deliverables
-- **UI/UX (Material Design):**
-  - Modern, responsive light-theme design system with DM Serif / Inter typography.
-  - Centered Google-style search with instant NSE ticker mapping chips (`INFY`, `RELIANCE`, `TCS`, `HDFCBANK`).
-  - Search progress pipeline simulation & report-gating workflow.
-  - Multi-gear processing dashboard reflecting active agent orchestration.
-- **Backend Scaffold & Modular Endpoints:**
-  - FastAPI modular service with CORS, Pydantic schemas, and `/health` monitoring.
-  - Security via Supabase JWT cryptographic verification on protected routes.
-- **Market Data Retrieval & Validation Suite:**
-  - Automated 3-month OHLCV data retrieval via yfinance (`/api/market-data/historical`).
-  - Automated validation pipeline: checks for missing dates, null counts, High < Low inversions, and negative volume anomalies.
+# Slide 3: Market Data Retrieval & Integrity Validation Suite
+Implemented in `backend/app/services/market_data.py`:
+
+- **Historical Data Retrieval:**
+  - Dynamic NSE symbol translation (e.g. `INFY` → `INFY.NS`) integrated with `yfinance`.
+  - Automated extraction of 3-month daily OHLCV (Open, High, Low, Close, Volume) series.
+  - Captures contextual company metrics (market cap, 52-week high/low, industry sector) and UTC timestamps.
+- **Data Integrity & Validation Suite:**
+  - **Null & Missing Value Auditing:** Verifies completeness across all OHLCV columns.
+  - **Duplicate Date Checking:** Scans date indices for duplicate market sessions.
+  - **Price Sanity Verification:** Validates that `High >= Low` and `Volume >= 0` for all records.
+  - **Sanitization:** Automatically drops duplicate trading timestamps and forward-fills gaps caused by trading halts.
+  - Validated via unit test suite in `backend/tests/test_validation.py`.
 
 ---
 
-# Slide 4: Database Schema (Supabase / PostgreSQL)
-A normalized 7-table schema with strict **Row Level Security (RLS)**:
+# Slide 4: Database Schema Design (PostgreSQL / Supabase)
+Implemented, migrated, and pushed directly to Supabase (`infosys_project`) with **Row Level Security (RLS)** active on all tables.
 
-1. **`profiles`:** User settings & preferred default exchange (linked to `auth.users`).
-2. **`ticker_map`:** Central translation layer mapping company names & symbols to yfinance identifiers (`INFY` -> `INFY.NS`).
-3. **`research_tasks`:** Tracks asynchronous user research jobs (`pending` -> `running` -> `completed`).
-4. **`agent_results`:** Independent results per agent using flexible `jsonb` payloads.
-5. **`research_reports`:** Final synthesized supervisor report with executive summary and advisory signals.
-6. **`source_documents`:** Full citation trail and content hashes ensuring verifiable claims.
-7. **`saved_stocks`:** User watchlists and portfolio tracking.
+### 1. `profiles` (User Extensions)
+- `id` (UUID, PK, FK → `auth.users.id` ON DELETE CASCADE)
+- `display_name` (TEXT)
+- `preferred_market` (TEXT, DEFAULT 'NSE')
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+- *Trigger:* Auto-populates a row whenever a new user registers in `auth.users`.
+
+### 2. `ticker_map` (Symbol Translation Layer)
+- `id` (SERIAL, PK)
+- `company_name` (TEXT, NOT NULL)
+- `ticker_symbol` (TEXT, NOT NULL, UNIQUE)
+- `yfinance_symbol` (TEXT, NOT NULL) — e.g. `INFY.NS`
+- `exchange` (TEXT, DEFAULT 'NSE')
+- `sector` (TEXT)
+- `is_active` (BOOLEAN, DEFAULT TRUE)
+- *Indexes:* GIN full-text index on `company_name` and B-tree index on `ticker_symbol`.
+
+### 3. `research_tasks` (Task Lifecycle)
+- `id` (UUID, PK, DEFAULT `gen_random_uuid()`)
+- `user_id` (UUID, FK → `auth.users.id` ON DELETE CASCADE)
+- `ticker_symbol` (TEXT, NOT NULL)
+- `yfinance_symbol` (TEXT, NOT NULL)
+- `market` (TEXT, DEFAULT 'NSE')
+- `requested_period` (TEXT, DEFAULT '3mo')
+- `status` (TEXT, CHECK: `'pending'`, `'running'`, `'completed'`, `'failed'`)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `completed_at` (TIMESTAMPTZ, NULLABLE)
+
+### 4. `agent_results` (Independent Multi-Agent Storage)
+- `id` (UUID, PK, DEFAULT `gen_random_uuid()`)
+- `task_id` (UUID, FK → `research_tasks.id` ON DELETE CASCADE)
+- `agent_name` (TEXT, CHECK: `'fundamental'`, `'technical'`, `'news'`, `'risk'`, `'supervisor'`)
+- `status` (TEXT, CHECK: `'pending'`, `'running'`, `'success'`, `'failed'`)
+- `output_json` (JSONB) — flexible semi-structured findings per agent
+- `error_message` (TEXT, NULLABLE)
+- `execution_time_ms` (INTEGER)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `updated_at` (TIMESTAMPTZ, DEFAULT NOW())
 
 ---
 
-# Slide 5: Upcoming Milestones & Roadmap
-- **Milestone 2 (Week 4):** Specialized Agents Implementation
-  - Fundamental Agent (ratios, balance sheet audit).
-  - Technical Agent (RSI, MACD, Moving Averages via NumPy/Pandas).
-  - News & Sentiment Agent (corporate filings & financial headlines).
-  - Risk Agent (conflicting evidence & anomaly detection).
-- **Milestone 3 (Week 6):** Supervisor Agent & LangGraph Consensus Engine.
-- **Milestone 4 (Week 8):** Full Interactive Visualizations (Plotly) & Live Cloud Deployment.
+# Slide 5: Database Schema (Continued) & Security Policies
 
+### 5. `research_reports` (Consolidated Research Output)
+- `id` (UUID, PK, DEFAULT `gen_random_uuid()`)
+- `task_id` (UUID, UNIQUE, FK → `research_tasks.id` ON DELETE CASCADE)
+- `report_content` (TEXT) — Markdown/HTML structured report
+- `summary` (TEXT) — executive brief
+- `recommendation` (TEXT, CHECK: `'BUY'`, `'HOLD'`, `'SELL'`, `'NEUTRAL'`)
+- `confidence_score` (FLOAT, 0.0 to 1.0)
+- `limitations` (TEXT) — identified data gaps or conflicting signals
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+
+### 6. `source_documents` (Auditability & Citations)
+- `id` (UUID, PK, DEFAULT `gen_random_uuid()`)
+- `task_id` (UUID, FK → `research_tasks.id` ON DELETE CASCADE)
+- `agent_name` (TEXT)
+- `source_type` (TEXT) — `'yfinance'`, `'news_api'`, `'filing'`
+- `title` (TEXT)
+- `source_url` (TEXT)
+- `published_at` (TIMESTAMPTZ)
+- `retrieved_at` (TIMESTAMPTZ, DEFAULT NOW())
+- `content_hash` (TEXT) — cryptographic verification of raw evidence
+
+### 7. `saved_stocks` (User Watchlists)
+- `id` (UUID, PK, DEFAULT `gen_random_uuid()`)
+- `user_id` (UUID, FK → `auth.users.id` ON DELETE CASCADE)
+- `ticker_symbol` (TEXT, NOT NULL)
+- `company_name` (TEXT)
+- `created_at` (TIMESTAMPTZ, DEFAULT NOW())
+- *Constraint:* `UNIQUE(user_id, ticker_symbol)`
+
+### Row Level Security (RLS) Implementation:
+- `ticker_map`: Public read-only access.
+- `profiles`, `research_tasks`, `saved_stocks`: Strictly limited to `auth.uid() = user_id`.
+- `agent_results`, `research_reports`, `source_documents`: Access restricted through subquery join on parent task ownership (`WHERE task_id IN (SELECT id FROM research_tasks WHERE user_id = auth.uid())`).
+
+---
+
+# Slide 6: Summary & Next Steps (Milestone 2 Roadmap)
+- **Current Milestone 1 Accomplishments:**
+  - Complete backend & frontend scaffolding operational.
+  - Supabase database linked and migrated with all 7 core tables and RLS.
+  - Data ingestion & automated validation suite for 3-month NSE OHLCV functional.
+  - Authentication flow established using Supabase JWT.
+- **Milestone 2 Focus:**
+  - Build the **Technical Analysis Agent** (computations for RSI, MACD, 50/200 DMA, Historical Volatility).
+  - Build the **Fundamental Analysis Agent** (P/E, P/B, Debt-to-Equity, Profitability Ratios).
+  - Implement news extraction & citation pipelines.
+  - Structured agent output standardization.
