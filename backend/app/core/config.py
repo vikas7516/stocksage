@@ -1,15 +1,32 @@
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 
 class Settings(BaseSettings):
-    supabase_url: str
-    supabase_service_key: str
-    supabase_jwt_secret: str
+    supabase_url: Optional[str] = None
+    supabase_service_key: Optional[str] = None
+    supabase_service_role_key: Optional[str] = None
+    supabase_secret_key: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+    supabase_publishable_key: Optional[str] = None
+    supabase_jwt_secret: Optional[str] = None
     frontend_url: str = "http://localhost:5173"
     environment: str = "development"
 
+    @property
+    def get_service_key(self) -> str:
+        return (
+            self.supabase_service_role_key
+            or self.supabase_service_key
+            or self.supabase_secret_key
+            or self.supabase_anon_key
+            or self.supabase_publishable_key
+            or ""
+        )
+
     class Config:
         env_file = ".env"
+        extra = "allow"
 
 
 settings = Settings()
