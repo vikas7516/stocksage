@@ -22,9 +22,11 @@ We have completed all requirements specified for Milestone 1:
    - Modular structure: routers (`auth`, `search`), models (`schemas`), and services (`market_data`).
    - CORS middleware enabled for seamless frontend-backend communication.
    - Health check endpoint (`GET /health`) for container uptime verification.
-3. **Stateless JWT Authentication Flow:**
-   - Client authenticates directly against Supabase Auth.
-   - FastAPI intercepts and verifies Supabase JWT signatures (`HS256`) via cryptographic middleware (`verify_jwt`), extracting user context statelessly without database session overhead.
+3. **End-to-End Supabase JWT Authentication Flow:**
+   - Real client authentication: integrated `supabase.auth.signUp()` and `supabase.auth.signInWithPassword()`.
+   - Passwords securely hashed and stored in Supabase's `auth.users` vault (trigger creates corresponding `profiles` row).
+   - Issues cryptographically signed HS256 JWT access tokens, stored in client `localStorage`.
+   - FastAPI intercepts tokens via `verify_jwt` middleware to validate user identity statelessly without database session overhead.
 
 ---
 
