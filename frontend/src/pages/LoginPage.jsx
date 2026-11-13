@@ -8,27 +8,91 @@ import {
   Button,
   Divider,
   Link,
-  Alert
+  Alert,
+  CircularProgress
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
-  const [infoMsg, setInfoMsg] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleAuth = (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault()
+    setErrorMessage('')
+    setSuccessMessage('')
+
     if (!email || !password) {
-      setInfoMsg('Please fill in both email and password.')
+      setErrorMessage('Please fill in both email and password.')
       return
     }
-    // Simulation / stub for milestone 1
-    console.log(`${isSignUp ? 'Sign up' : 'Sign in'} request:`, { email, password })
-    navigate('/dashboard')
+
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      if (!supabase) {
+        // Fallback demo mode if keys are not set locally
+        console.warn('Supabase client not initialized with environment keys. Using local demo fallback.')
+        localStorage.setItem('stocksage_user', JSON.stringify({ email }))
+        navigate('/dashboard')
+        return
+      }
+
+      if (isSignUp) {
+        // Real Supabase User Registration
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+        })
+
+        if (error) {
+          setErrorMessage(error.message)
+        } else {
+          // If Supabase has email confirmation turned off, session is immediately active
+          if (data?.session) {
+            localStorage.setItem('stocksage_token', data.session.access_token)
+            localStorage.setItem('stocksage_user', JSON.stringify(data.user))
+            navigate('/dashboard')
+          } else {
+            setSuccessMessage('Account created successfully! You can now sign in.')
+            setIsSignUp(false)
+          }
+        }
+      } else {
+        // Real Supabase User Login
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+
+        if (error) {
+          setErrorMessage(error.message)
+        } else {
+          // Store actual JWT access token issued by Supabase
+          if (data?.session) {
+            localStorage.setItem('stocksage_token', data.session.access_token)
+            localStorage.setItem('stocksage_user', JSON.stringify(data.user))
+          }
+          navigate('/dashboard')
+        }
+      }
+    } catch (err) {
+      setErrorMessage(err.message || 'An unexpected authentication error occurred.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -94,14 +158,20 @@ export default function LoginPage() {
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
               {isSignUp
-                ? 'Sign up to unlock detailed agentic stock research'
+                ? 'Sign up with email and password to access research reports'
                 : 'Sign in to access your research reports and watchlists'}
             </Typography>
           </Box>
 
-          {infoMsg && (
-            <Alert severity="info" sx={{ mb: 2.5, borderRadius: '8px' }} onClose={() => setInfoMsg('')}>
-              {infoMsg}
+          {errorMessage && (
+            <Alert severity="error" sx={{ mb: 2.5, borderRadius: '8px' }} onClose={() => setErrorMessage('')}>
+              {errorMessage}
+            </Alert>
+          )}
+
+          {successMessage && (
+            <Alert severity="success" sx={{ mb: 2.5, borderRadius: '8px' }} onClose={() => setSuccessMessage('')}>
+              {successMessage}
             </Alert>
           )}
 
@@ -115,6 +185,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="analyst@example.com"
+              disabled={loading}
               sx={{ mb: 2 }}
             />
 
@@ -127,6 +198,8 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              disabled={loading}
+              helperText={isSignUp ? 'Minimum 6 characters' : ''}
               sx={{ mb: 2.5 }}
             />
 
@@ -135,6 +208,7 @@ export default function LoginPage() {
               variant="contained"
               fullWidth
               size="large"
+              disabled={loading}
               sx={{
                 py: 1.4,
                 fontSize: '0.95rem',
@@ -142,7 +216,13 @@ export default function LoginPage() {
                 mb: 2,
               }}
             >
-              {isSignUp ? 'Create Account' : 'Sign In'}
+              {loading ? (
+                <CircularProgress size={24} sx={{ color: '#fff' }} />
+              ) : isSignUp ? (
+                'Create Account'
+              ) : (
+                'Sign In'
+              )}
             </Button>
           </Box>
 
@@ -165,7 +245,8 @@ export default function LoginPage() {
                 }}
                 onClick={() => {
                   setIsSignUp(!isSignUp)
-                  setInfoMsg('')
+                  setErrorMessage('')
+                  setSuccessMessage('')
                 }}
               >
                 {isSignUp ? 'Sign In' : 'Sign Up'}
@@ -182,4 +263,5 @@ export default function LoginPage() {
     </Box>
   )
 }
+
 
