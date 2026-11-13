@@ -9,9 +9,11 @@ import {
   Divider,
   Link,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Snackbar,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
@@ -21,13 +23,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const [successNotification, setSuccessNotification] = useState('')
+  const [snackbarOpen, setSnackbarOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleAuth = async (e) => {
     e.preventDefault()
     setErrorMessage('')
-    setSuccessMessage('')
 
     if (!email || !password) {
       setErrorMessage('Please fill in both email and password.')
@@ -43,10 +45,11 @@ export default function LoginPage() {
 
     try {
       if (!supabase) {
-        // Fallback demo mode if keys are not set locally
         console.warn('Supabase client not initialized with environment keys. Using local demo fallback.')
         localStorage.setItem('stocksage_user', JSON.stringify({ email }))
-        navigate('/dashboard')
+        setSuccessNotification('Signed in successfully (Demo mode). Redirecting...')
+        setSnackbarOpen(true)
+        setTimeout(() => navigate('/dashboard'), 1000)
         return
       }
 
@@ -60,14 +63,19 @@ export default function LoginPage() {
         if (error) {
           setErrorMessage(error.message)
         } else {
-          // If Supabase has email confirmation turned off, session is immediately active
+          // If auto-confirm is enabled, session is active immediately
           if (data?.session) {
             localStorage.setItem('stocksage_token', data.session.access_token)
             localStorage.setItem('stocksage_user', JSON.stringify(data.user))
-            navigate('/dashboard')
+            setSuccessNotification('Account created successfully! Redirecting to research dashboard...')
+            setSnackbarOpen(true)
+            setTimeout(() => navigate('/dashboard'), 1400)
           } else {
-            setSuccessMessage('Account created successfully! You can now sign in.')
+            // User created in database
+            setSuccessNotification('Account created in Supabase database! You can now sign in.')
+            setSnackbarOpen(true)
             setIsSignUp(false)
+            setPassword('')
           }
         }
       } else {
@@ -80,12 +88,13 @@ export default function LoginPage() {
         if (error) {
           setErrorMessage(error.message)
         } else {
-          // Store actual JWT access token issued by Supabase
           if (data?.session) {
             localStorage.setItem('stocksage_token', data.session.access_token)
             localStorage.setItem('stocksage_user', JSON.stringify(data.user))
           }
-          navigate('/dashboard')
+          setSuccessNotification('Login successful! Redirecting...')
+          setSnackbarOpen(true)
+          setTimeout(() => navigate('/dashboard'), 1000)
         }
       }
     } catch (err) {
@@ -108,6 +117,29 @@ export default function LoginPage() {
         position: 'relative',
       }}
     >
+      {/* Toast Notification (Snackbar) */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarOpen(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbarOpen(false)}
+          severity="success"
+          icon={<CheckCircleOutlineIcon fontSize="inherit" />}
+          sx={{
+            width: '100%',
+            borderRadius: '10px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+            fontSize: '0.9rem',
+            fontWeight: 500,
+          }}
+        >
+          {successNotification}
+        </Alert>
+      </Snackbar>
+
       {/* Top back button */}
       <Box
         sx={{
@@ -163,15 +195,17 @@ export default function LoginPage() {
             </Typography>
           </Box>
 
+          {/* Inline Error Alert */}
           {errorMessage && (
             <Alert severity="error" sx={{ mb: 2.5, borderRadius: '8px' }} onClose={() => setErrorMessage('')}>
               {errorMessage}
             </Alert>
           )}
 
-          {successMessage && (
-            <Alert severity="success" sx={{ mb: 2.5, borderRadius: '8px' }} onClose={() => setSuccessMessage('')}>
-              {successMessage}
+          {/* Inline Success Alert */}
+          {successNotification && (
+            <Alert severity="success" sx={{ mb: 2.5, borderRadius: '8px' }}>
+              {successNotification}
             </Alert>
           )}
 
@@ -246,7 +280,7 @@ export default function LoginPage() {
                 onClick={() => {
                   setIsSignUp(!isSignUp)
                   setErrorMessage('')
-                  setSuccessMessage('')
+                  setSuccessNotification('')
                 }}
               >
                 {isSignUp ? 'Sign In' : 'Sign Up'}
@@ -263,5 +297,6 @@ export default function LoginPage() {
     </Box>
   )
 }
+
 
 
