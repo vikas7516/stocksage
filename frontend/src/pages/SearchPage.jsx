@@ -11,6 +11,7 @@ import {
   ListItemButton,
   ListItemText,
   Fade,
+  CircularProgress,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -18,63 +19,104 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import SearchResultModal from '../components/SearchResultModal'
 import { useNavigate } from 'react-router-dom'
 
-const ALL_NSE_STOCKS = [
-  { symbol: 'INFY', name: 'Infosys Limited', sector: 'Information Technology' },
-  { symbol: 'TCS', name: 'Tata Consultancy Services', sector: 'Information Technology' },
-  { symbol: 'RELIANCE', name: 'Reliance Industries Limited', sector: 'Energy & Petrochemicals' },
-  { symbol: 'HDFCBANK', name: 'HDFC Bank Limited', sector: 'Banking & Financial Services' },
-  { symbol: 'ICICIBANK', name: 'ICICI Bank Limited', sector: 'Banking & Financial Services' },
-  { symbol: 'WIPRO', name: 'Wipro Limited', sector: 'Information Technology' },
-  { symbol: 'TATAMOTORS', name: 'Tata Motors Limited', sector: 'Automobile' },
-  { symbol: 'SBIN', name: 'State Bank of India', sector: 'Public Sector Banking' },
-  { symbol: 'BHARTIARTL', name: 'Bharti Airtel Limited', sector: 'Telecommunications' },
-  { symbol: 'ITC', name: 'ITC Limited', sector: 'FMCG & Diversified' },
-  { symbol: 'HINDUNILVR', name: 'Hindustan Unilever Limited', sector: 'FMCG' },
-  { symbol: 'LICI', name: 'Life Insurance Corporation of India', sector: 'Insurance' },
-  { symbol: 'LT', name: 'Larsen & Toubro Limited', sector: 'Engineering & Construction' },
+const FALLBACK_STOCKS = [
+  { ticker_symbol: 'INFY', company_name: 'Infosys Limited', yfinance_symbol: 'INFY.NS', exchange: 'NSE', sector: 'Information Technology' },
+  { ticker_symbol: 'TCS', company_name: 'Tata Consultancy Services Limited', yfinance_symbol: 'TCS.NS', exchange: 'NSE', sector: 'Information Technology' },
+  { ticker_symbol: 'RELIANCE', company_name: 'Reliance Industries Limited', yfinance_symbol: 'RELIANCE.NS', exchange: 'NSE', sector: 'Energy' },
+  { ticker_symbol: 'HDFCBANK', company_name: 'HDFC Bank Limited', yfinance_symbol: 'HDFCBANK.NS', exchange: 'NSE', sector: 'Banking & Financial Services' },
+  { ticker_symbol: 'ICICIBANK', company_name: 'ICICI Bank Limited', yfinance_symbol: 'ICICIBANK.NS', exchange: 'NSE', sector: 'Banking & Financial Services' },
+  { ticker_symbol: 'WIPRO', company_name: 'Wipro Limited', yfinance_symbol: 'WIPRO.NS', exchange: 'NSE', sector: 'Information Technology' },
+  { ticker_symbol: 'TATAMOTORS', company_name: 'Tata Motors Limited', yfinance_symbol: 'TATAMOTORS.NS', exchange: 'NSE', sector: 'Automobile' },
+  { ticker_symbol: 'SBIN', company_name: 'State Bank of India', yfinance_symbol: 'SBIN.NS', exchange: 'NSE', sector: 'Banking & Financial Services' },
 ]
 
-const QUICK_CHIPS = ['Infosys', 'Reliance', 'HDFC Bank', 'TCS', 'Wipro']
+const QUICK_CHIPS = [
+  { symbol: 'INFY', label: 'Infosys' },
+  { symbol: 'RELIANCE', label: 'Reliance' },
+  { symbol: 'HDFCBANK', label: 'HDFC Bank' },
+  { symbol: 'TCS', label: 'TCS' },
+  { symbol: 'TATAMOTORS', label: 'Tata Motors' },
+]
 
 export default function SearchPage() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [searching, setSearching] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedStock, setSelectedStock] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const searchContainerRef = useRef(null)
   const navigate = useNavigate()
 
-  // Filter stocks dynamically as user types
-  const filteredStocks = searchQuery.trim()
-    ? ALL_NSE_STOCKS.filter((s) => {
-        const q = searchQuery.toLowerCase().trim()
-        return (
-          s.symbol.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q) ||
-          s.sector.toLowerCase().includes(q)
-        )
-      })
-    : []
+  useEffect(() => {
+    const q = searchQuery.trim()
+    if (!q) {
+      setSuggestions([])
+      setSearching(false)
+      return
+    }
 
-  const handleSelect = (stock) => {
-    setSelectedStock(stock.name || stock.symbol)
-    setSearchQuery(stock.symbol)
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+      try {
+        const res = await fetch(
+          `${apiUrl}/api/search/public?q=${encodeURIComponent(q)}&limit=8`,
+          { signal: controller.signal }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          setSuggestions(data.results || [])
+        } else {
+          throw new Error('Search API error')
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return
+        const qLower = q.toLowerCase()
+        setSuggestions(
+          FALLBACK_STOCKS.filter(
+            (s) =>
+              s.ticker_symbol.toLowerCase().includes(qLower) ||
+              s.company_name.toLowerCase().includes(qLower) ||
+              (s.sector || '').toLowerCase().includes(qLower)
+          )
+        )
+      } finally {
+        setSearching(false)
+      }
+    }, 180)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [searchQuery])
+
+  const openStockModal = (symbolOrName) => {
+    const clean = symbolOrName.trim()
+    if (!clean) return
+    localStorage.setItem('stocksage_last_symbol', clean.toUpperCase())
+    setSelectedStock(clean)
     setShowDropdown(false)
     setModalOpen(true)
   }
 
+  const handleSelect = (stock) => {
+    setSearchQuery(stock.ticker_symbol)
+    openStockModal(stock.ticker_symbol)
+  }
+
   const handleSearch = () => {
     if (searchQuery.trim()) {
-      setSelectedStock(searchQuery.trim())
-      setShowDropdown(false)
-      setModalOpen(true)
+      openStockModal(searchQuery.trim())
     }
   }
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
-      if (filteredStocks.length > 0 && showDropdown) {
-        handleSelect(filteredStocks[0])
+      if (suggestions.length > 0 && showDropdown) {
+        handleSelect(suggestions[0])
       } else {
         handleSearch()
       }
@@ -83,13 +125,9 @@ export default function SearchPage() {
     }
   }
 
-  // Close dropdown if clicked outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(event.target)
-      ) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
         setShowDropdown(false)
       }
     }
@@ -116,14 +154,23 @@ export default function SearchPage() {
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1.5,
+          justifyContent: 'space-between',
         }}
       >
-        <IconButton size="small" onClick={() => navigate('/')} sx={{ color: 'text.secondary' }}>
-          <ArrowBackIcon fontSize="small" />
-        </IconButton>
-        <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', color: 'primary.main' }}>
-          StockSage
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <IconButton size="small" onClick={() => navigate('/')} sx={{ color: 'text.secondary' }}>
+            <ArrowBackIcon fontSize="small" />
+          </IconButton>
+          <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', color: 'primary.main' }}>
+            StockSage
+          </Typography>
+        </Box>
+        <Typography
+          variant="body2"
+          onClick={() => navigate('/dashboard')}
+          sx={{ color: 'primary.main', fontWeight: 600, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+        >
+          Dashboard →
         </Typography>
       </Box>
 
@@ -139,7 +186,6 @@ export default function SearchPage() {
           pb: 10,
         }}
       >
-        {/* Title */}
         <Typography
           variant="h1"
           sx={{
@@ -162,17 +208,13 @@ export default function SearchPage() {
           variant="body2"
           sx={{ color: '#94a3b8', mb: 4, textAlign: 'center', fontSize: '0.85rem' }}
         >
-          by name or ticker symbol — live auto-suggestions enabled
+          by name or ticker symbol — backed by NSE ticker_map
         </Typography>
 
-        {/* Search Bar Container with Auto-complete Dropdown */}
+        {/* Search Bar Container */}
         <Box
           ref={searchContainerRef}
-          sx={{
-            width: '100%',
-            maxWidth: 640,
-            position: 'relative',
-          }}
+          sx={{ width: '100%', maxWidth: 640, position: 'relative' }}
         >
           <TextField
             value={searchQuery}
@@ -184,14 +226,14 @@ export default function SearchPage() {
               if (searchQuery.trim()) setShowDropdown(true)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search company or ticker (e.g. INFY, Reliance, HDFC)..."
+            placeholder="Search company or ticker (e.g. INFY, Reliance, HDFC, HAL)..."
             variant="outlined"
             fullWidth
             autoFocus
             autoComplete="off"
             sx={{
               '& .MuiOutlinedInput-root': {
-                borderRadius: showDropdown && filteredStocks.length > 0 ? '24px 24px 0 0' : '50px',
+                borderRadius: showDropdown && suggestions.length > 0 ? '24px 24px 0 0' : '50px',
                 fontSize: '1rem',
                 pl: 1,
                 pr: 0.5,
@@ -204,6 +246,7 @@ export default function SearchPage() {
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
+                  {searching && <CircularProgress size={18} sx={{ mr: 1 }} />}
                   <IconButton
                     onClick={handleSearch}
                     sx={{
@@ -221,9 +264,9 @@ export default function SearchPage() {
             }}
           />
 
-          {/* Google-Style Dropdown Menu */}
-          {showDropdown && filteredStocks.length > 0 && (
-            <Fade in={showDropdown} timeout={200}>
+          {/* Auto-complete Dropdown */}
+          {showDropdown && suggestions.length > 0 && (
+            <Fade in={showDropdown} timeout={180}>
               <Paper
                 elevation={6}
                 sx={{
@@ -235,16 +278,16 @@ export default function SearchPage() {
                   borderRadius: '0 0 24px 24px',
                   border: '1px solid #e2e8f0',
                   borderTop: 'none',
-                  maxHeight: 280,
+                  maxHeight: 300,
                   overflowY: 'auto',
                   backgroundColor: '#ffffff',
                   boxShadow: '0 12px 30px rgba(0,0,0,0.12)',
                 }}
               >
                 <List disablePadding>
-                  {filteredStocks.map((stock) => (
+                  {suggestions.map((stock) => (
                     <ListItemButton
-                      key={stock.symbol}
+                      key={stock.ticker_symbol}
                       onClick={() => handleSelect(stock)}
                       sx={{
                         py: 1.2,
@@ -253,9 +296,7 @@ export default function SearchPage() {
                         alignItems: 'center',
                         gap: 1.5,
                         borderBottom: '1px solid #f1f5f9',
-                        '&:hover': {
-                          backgroundColor: '#f8faff',
-                        },
+                        '&:hover': { backgroundColor: '#f8faff' },
                       }}
                     >
                       <TrendingUpIcon sx={{ fontSize: 18, color: '#1a56db', opacity: 0.8 }} />
@@ -263,17 +304,17 @@ export default function SearchPage() {
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', color: 'text.primary' }}>
-                              {stock.symbol}
+                              {stock.ticker_symbol}
                             </Typography>
                             <Typography sx={{ color: '#94a3b8', fontSize: '0.8rem' }}>·</Typography>
                             <Typography sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>
-                              {stock.name}
+                              {stock.company_name}
                             </Typography>
                           </Box>
                         }
                         secondary={
                           <Typography sx={{ fontSize: '0.75rem', color: '#94a3b8', mt: 0.2 }}>
-                            NSE · {stock.sector}
+                            {stock.exchange} · {stock.sector || 'Equity'}
                           </Typography>
                         }
                       />
@@ -289,14 +330,13 @@ export default function SearchPage() {
         <Box sx={{ display: 'flex', gap: 1, mt: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
           {QUICK_CHIPS.map((s) => (
             <Chip
-              key={s}
-              label={s}
+              key={s.symbol}
+              label={s.label}
               size="small"
               clickable
               onClick={() => {
-                setSearchQuery(s)
-                setSelectedStock(s)
-                setModalOpen(true)
+                setSearchQuery(s.symbol)
+                openStockModal(s.symbol)
               }}
               sx={{
                 fontSize: '0.78rem',
@@ -309,7 +349,6 @@ export default function SearchPage() {
           ))}
         </Box>
 
-        {/* Footnote */}
         <Typography variant="caption" sx={{ mt: 4, color: '#cbd5e1', textAlign: 'center' }}>
           NSE-listed companies only · Data via yfinance · Not financial advice
         </Typography>
@@ -323,5 +362,3 @@ export default function SearchPage() {
     </Box>
   )
 }
-
-

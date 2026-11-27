@@ -20,10 +20,10 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import { useNavigate } from 'react-router-dom'
 
 const STATUS_STEPS = [
-  { label: 'Resolving NSE ticker mapping', done: false },
-  { label: 'Retrieving 3-month OHLCV data', done: false },
-  { label: 'Validating series integrity & null checks', done: false },
-  { label: 'Preparing agent research environment', done: false },
+  { label: 'Resolving NSE ticker mapping' },
+  { label: 'Retrieving 3-month OHLCV data' },
+  { label: 'Computing SMA, EMA, RSI & MACD indicators' },
+  { label: 'Preparing research preview' },
 ]
 
 export default function SearchResultModal({ open, onClose, companyName }) {
@@ -33,8 +33,10 @@ export default function SearchResultModal({ open, onClose, companyName }) {
   const [previewData, setPreviewData] = useState({
     exchange: 'NSE',
     symbol: '',
-    sector: 'Loading...',
-    status: 'Verified (0 nulls, 0 duplicate dates)'
+    latestPrice: '—',
+    periodReturn: '—',
+    rsi14: '—',
+    trend: '—',
   })
 
   useEffect(() => {
@@ -50,44 +52,52 @@ export default function SearchResultModal({ open, onClose, companyName }) {
         clearInterval(stepInterval)
         return prev
       })
-    }, 850)
+    }, 650)
 
-    // Query backend public market data if available or fallback cleanly
     const fetchPreview = async () => {
-      const cleanSym = (companyName || '').trim().toUpperCase()
-      const fallbackSymbol = cleanSym ? `${cleanSym}.NS` : 'INFY.NS'
+      const cleanSym = (companyName || '').trim()
+      const fallbackSymbol = cleanSym ? `${cleanSym.toUpperCase()}.NS` : 'INFY.NS'
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
       try {
-        const res = await fetch(`${apiUrl}/api/market-data/historical?symbol=${cleanSym}&period=3mo`)
+        const res = await fetch(
+          `${apiUrl}/api/analysis/technical?symbol=${encodeURIComponent(cleanSym)}&period=3mo`
+        )
         if (res.ok) {
           const json = await res.json()
+          const ret = json.period_return_pct
           setPreviewData({
             exchange: 'NSE',
             symbol: json.symbol || fallbackSymbol,
-            sector: json.company_info?.sector || 'Equity',
-            status: json.validation?.is_valid ? 'Validation Passed (Clean OHLCV)' : 'Data Cleaned'
+            latestPrice: json.latest_price != null ? `₹${json.latest_price}` : '—',
+            periodReturn: ret != null ? `${ret >= 0 ? '+' : ''}${ret}%` : '—',
+            rsi14: json.indicators?.rsi14 != null ? String(json.indicators.rsi14) : '—',
+            trend: (json.signals?.overall_trend || '—').replace('_', ' ').toUpperCase(),
           })
         } else {
           setPreviewData({
             exchange: 'NSE',
             symbol: fallbackSymbol,
-            sector: 'Information Technology / Equity',
-            status: 'Validation Verified'
+            latestPrice: 'Unavailable',
+            periodReturn: '—',
+            rsi14: '—',
+            trend: 'Pending backend',
           })
         }
-      } catch (e) {
+      } catch {
         setPreviewData({
           exchange: 'NSE',
           symbol: fallbackSymbol,
-          sector: 'Equity',
-          status: 'Validation Verified'
+          latestPrice: 'Backend offline',
+          periodReturn: '—',
+          rsi14: '—',
+          trend: 'Start FastAPI to view',
         })
       }
     }
 
     fetchPreview()
-    const resultTimer = setTimeout(() => setShowResult(true), 3800)
+    const resultTimer = setTimeout(() => setShowResult(true), 2600)
 
     return () => {
       clearInterval(stepInterval)
@@ -98,9 +108,13 @@ export default function SearchResultModal({ open, onClose, companyName }) {
   const rows = [
     { label: 'Exchange', value: previewData.exchange },
     { label: 'Resolved Symbol', value: previewData.symbol },
-    { label: 'Sector / Class', value: previewData.sector },
-    { label: 'Integrity Check', value: previewData.status },
+    { label: 'Latest Close', value: previewData.latestPrice },
+    { label: '3-Month Return', value: previewData.periodReturn },
+    { label: 'RSI (14)', value: previewData.rsi14 },
+    { label: 'Historical Signal', value: previewData.trend },
   ]
+
+  const isLoggedIn = Boolean(localStorage.getItem('stocksage_token') || localStorage.getItem('stocksage_user'))
 
   return (
     <Dialog
@@ -120,7 +134,6 @@ export default function SearchResultModal({ open, onClose, companyName }) {
         },
       }}
     >
-      {/* Progress bar at top */}
       {!showResult && <LinearProgress sx={{ height: 3 }} />}
 
       <DialogTitle
@@ -134,8 +147,17 @@ export default function SearchResultModal({ open, onClose, companyName }) {
         }}
       >
         <Box>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.7rem' }}>
-            Data Retrieval & Validation
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              fontWeight: 500,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              fontSize: '0.7rem',
+            }}
+          >
+            Market Data & Indicator Preview
           </Typography>
           <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mt: 0.3 }}>
             {companyName || 'Company'}
@@ -148,7 +170,6 @@ export default function SearchResultModal({ open, onClose, companyName }) {
 
       <DialogContent sx={{ pt: 1, pb: 3, px: 3 }}>
         {!showResult ? (
-          /* ── Loading state ── */
           <Box sx={{ py: 2 }}>
             {STATUS_STEPS.map((step, idx) => (
               <Box
@@ -164,11 +185,14 @@ export default function SearchResultModal({ open, onClose, companyName }) {
               >
                 <Box
                   sx={{
-                    width: 20, height: 20, borderRadius: '50%',
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
                     backgroundColor: idx < stepIdx ? '#1a56db' : idx === stepIdx ? '#bfdbfe' : '#e2e8f0',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     flexShrink: 0,
-                    transition: 'background-color 0.4s',
                   }}
                 >
                   {idx < stepIdx && <CheckCircleOutlineIcon sx={{ fontSize: 13, color: '#fff' }} />}
@@ -179,42 +203,36 @@ export default function SearchResultModal({ open, onClose, companyName }) {
                     color: idx <= stepIdx ? 'text.primary' : '#94a3b8',
                     fontWeight: idx === stepIdx ? 600 : 400,
                     fontSize: '0.875rem',
-                    transition: 'color 0.4s',
                   }}
                 >
                   {step.label}
-                  {idx === stepIdx && (
-                    <Box component="span" sx={{ color: '#1a56db' }}> ...</Box>
-                  )}
+                  {idx === stepIdx && <Box component="span" sx={{ color: '#1a56db' }}> ...</Box>}
                 </Typography>
               </Box>
             ))}
-            <Typography variant="caption" sx={{ display: 'block', mt: 2, color: '#94a3b8' }}>
-              Downloading 3 months OHLCV series & validating missing values...
-            </Typography>
           </Box>
         ) : (
-          /* ── Result state ── */
-          <Fade in={showResult} timeout={500}>
+          <Fade in={showResult} timeout={400}>
             <Box>
-              <Card
-                variant="outlined"
-                sx={{ mb: 2.5, borderRadius: '12px', backgroundColor: '#f8faff' }}
-              >
+              <Card variant="outlined" sx={{ mb: 2.5, borderRadius: '12px', backgroundColor: '#f8faff' }}>
                 <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                      Market Data Snapshot
+                      3-Month Snapshot
                     </Typography>
-                    <Chip label="yfinance Verified" size="small" sx={{ fontSize: '0.65rem', height: 20, backgroundColor: '#eff6ff', color: '#1a56db', fontWeight: 600 }} />
+                    <Chip
+                      label="yfinance Live"
+                      size="small"
+                      sx={{ fontSize: '0.65rem', height: 20, backgroundColor: '#eff6ff', color: '#1a56db', fontWeight: 600 }}
+                    />
                   </Box>
                   {rows.map((row, idx) => (
                     <Box key={row.label}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.8 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.7 }}>
                         <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.825rem' }}>
                           {row.label}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500, fontSize: '0.825rem' }}>
+                        <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600, fontSize: '0.825rem' }}>
                           {row.value}
                         </Typography>
                       </Box>
@@ -224,12 +242,11 @@ export default function SearchResultModal({ open, onClose, companyName }) {
                 </CardContent>
               </Card>
 
-              {/* Locked section prompt */}
               <Box
                 sx={{
                   border: '1px dashed #cbd5e1',
                   borderRadius: '12px',
-                  p: 2.5,
+                  p: 2,
                   mb: 3,
                   display: 'flex',
                   alignItems: 'center',
@@ -240,10 +257,10 @@ export default function SearchResultModal({ open, onClose, companyName }) {
                 <LockOutlinedIcon sx={{ color: '#94a3b8', fontSize: 22, flexShrink: 0 }} />
                 <Box>
                   <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.3 }}>
-                    Multi-Agent Advisory Locked
+                    Interactive Chart, Ratios & Risk Dashboard
                   </Typography>
                   <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
-                    Sign in to trigger autonomous fundamental, technical, sentiment and risk analysis agents.
+                    View candlestick + SMA/EMA/RSI/MACD charts, fundamental ratios, drawdown risk & news citations.
                   </Typography>
                 </Box>
               </Box>
@@ -252,10 +269,16 @@ export default function SearchResultModal({ open, onClose, companyName }) {
                 variant="contained"
                 fullWidth
                 size="large"
-                onClick={() => navigate('/login')}
+                onClick={() =>
+                  navigate(
+                    isLoggedIn
+                      ? `/dashboard?symbol=${encodeURIComponent(companyName || 'INFY')}`
+                      : '/login'
+                  )
+                }
                 sx={{ py: 1.4, fontSize: '0.95rem', borderRadius: '10px' }}
               >
-                Sign in to see full report →
+                {isLoggedIn ? 'Open Interactive Chart & Analysis →' : 'Sign in to see full dashboard →'}
               </Button>
             </Box>
           </Fade>
@@ -264,5 +287,3 @@ export default function SearchResultModal({ open, onClose, companyName }) {
     </Dialog>
   )
 }
-
-
