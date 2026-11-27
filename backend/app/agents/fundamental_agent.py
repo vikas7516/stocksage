@@ -1,10 +1,13 @@
 """Fundamental Analysis Agent: returns structured metadata + concise Markdown analysis."""
 
 import json
+import logging
 from typing import Any, Dict, List, Literal
 from pydantic import BaseModel, Field
 
 from app.agents.llm_client import call_llm_structured
+
+logger = logging.getLogger(__name__)
 
 
 class _FundamentalLLMShape(BaseModel):
@@ -75,6 +78,9 @@ def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutpu
     margin = prof.get("net_margin_pct")
     de = stab.get("debt_to_equity")
 
+    if err:
+        logger.warning(f"Fundamental agent fell back ({fundamentals.get('symbol')}): {err}")
+
     md = "\n".join([
         "### Snapshot",
         f"**{fundamentals.get('symbol')}** trades at a P/E of **{pe if pe is not None else 'N/A'}** and P/B of **{pb if pb is not None else 'N/A'}**.",
@@ -82,9 +88,6 @@ def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutpu
         "### Key Drivers",
         f"- **Profitability:** ROE is **{f'{roe}%' if roe is not None else 'N/A'}** with a net margin of **{f'{margin}%' if margin is not None else 'N/A'}**.",
         f"- **Balance Sheet:** Debt-to-Equity stands at **{de if de is not None else 'N/A'}**.",
-        "",
-        "### Setup Note",
-        "- Configure `GEMINI_API_KEY` on the backend for full AI interpretation." + (f" (`{err}`)" if err else ""),
     ])
     return FundamentalAgentOutput(
         status="fallback",

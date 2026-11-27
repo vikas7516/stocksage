@@ -1,11 +1,14 @@
 """Technical Analysis Agent: returns structured metadata + concise Markdown chart analysis."""
 
 import json
+import logging
 from typing import Any, Dict, Literal
 from pydantic import BaseModel
 
 from app.agents.llm_client import call_llm_structured
 from app.services.technical_analysis import TECHNICAL_DISCLAIMER
+
+logger = logging.getLogger(__name__)
 
 
 class _TechnicalLLMShape(BaseModel):
@@ -72,6 +75,9 @@ def run_technical_agent(technical: Dict[str, Any]) -> TechnicalAgentOutput:
             execution_time_ms=elapsed_ms,
         )
 
+    if err:
+        logger.warning(f"Technical agent fell back ({technical.get('symbol')}): {err}")
+
     ind = technical.get("indicators", {})
     trend = technical.get("signals", {}).get("overall_trend", "mixed")
     md = "\n".join([
@@ -85,7 +91,6 @@ def run_technical_agent(technical: Dict[str, Any]) -> TechnicalAgentOutput:
         "",
         "### Note",
         f"- {TECHNICAL_DISCLAIMER}",
-        "- Configure `GEMINI_API_KEY` on the backend for full AI chart interpretation." + (f" (`{err}`)" if err else ""),
     ])
     return TechnicalAgentOutput(
         status="fallback",

@@ -42,7 +42,7 @@ def test_fundamental_agent_structured_output():
 
 
 def test_technical_agent_fallback_preserves_disclaimer():
-    with patch("app.agents.technical_agent.call_llm_structured", return_value=(None, "timeout", 50)):
+    with patch("app.agents.technical_agent.call_llm_structured", return_value=(None, "HTTP 503: UNAVAILABLE", 50)):
         out = run_technical_agent({
             "symbol": "INFY.NS",
             "latest_price": 1151.3,
@@ -52,7 +52,49 @@ def test_technical_agent_fallback_preserves_disclaimer():
         assert isinstance(out, TechnicalAgentOutput)
         assert out.status == "fallback"
         assert "### Trend Summary" in out.report_markdown
+        assert "HTTP 503" not in out.report_markdown
+        assert "GEMINI_API_KEY" not in out.report_markdown
         assert "not be treated as guaranteed predictions" in out.disclaimer
+
+
+def test_llm_client_retries_503_and_falls_back_to_secondary_model():
+    from unittest.mock import MagicMock
+    from app.agents.fundamental_agent import _FundamentalLLMShape
+    from app.agents.llm_client import call_llm_structured
+
+    resp_503 = MagicMock(status_code=503, text='{"error":{"code":503,"status":"UNAVAILABLE"}}')
+    resp_200 = MagicMock(status_code=200)
+    resp_200.json.return_value = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": '{"report_markdown":"### Snapshot\\nRecovered.","valuation_assessment":"fairly_valued","financial_health":"strong"}'
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    mock_client = MagicMock()
+    # 2 attempts on primary (503, 503), then 503 on preview alias, then 200 on gemini-2.5-flash-lite
+    mock_client.post.side_effect = [resp_503, resp_503, resp_503, resp_200]
+    mock_cm = MagicMock()
+    mock_cm.__enter__.return_value = mock_client
+    mock_cm.__exit__.return_value = False
+
+    with (
+        patch("app.agents.llm_client.settings.gemini_api_key", "test-key"),
+        patch("app.agents.llm_client.httpx.Client", return_value=mock_cm),
+        patch("app.agents.llm_client.time.sleep"),
+    ):
+        parsed, err, _ = call_llm_structured("sys", "usr", _FundamentalLLMShape)
+        assert err is None
+        assert parsed is not None
+        assert parsed.valuation_assessment == "fairly_valued"
+        assert mock_client.post.call_count == 4
 
 
 def test_news_agent_preserves_urls_and_dates():

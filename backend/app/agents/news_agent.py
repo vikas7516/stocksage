@@ -1,10 +1,13 @@
 """News & Sentiment Analysis Agent: returns structured article tags + concise Markdown briefing."""
 
 import json
+import logging
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.agents.llm_client import call_llm_structured
+
+logger = logging.getLogger(__name__)
 
 
 class _ArticleClassification(BaseModel):
@@ -122,6 +125,9 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
             execution_time_ms=elapsed_ms,
         )
 
+    if err:
+        logger.warning(f"News agent fell back ({symbol}): {err}")
+
     bullets = [
         f"- [{a.title}]({a.source_url}) — *{a.publisher}*"
         + (f" ({a.published_at[:10]})" if a.published_at else "")
@@ -131,10 +137,8 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
         "### Sentiment Overview",
         f"Retrieved **{len(enriched)}** recent headlines for **{symbol}**.",
         "",
-        "### Headlines",
+        "### Key Headlines",
         *bullets,
-        "",
-        "- Configure `GEMINI_API_KEY` on the backend for full AI sentiment synthesis." + (f" (`{err}`)" if err else ""),
     ])
     return NewsAgentOutput(
         status="fallback",

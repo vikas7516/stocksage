@@ -1,10 +1,13 @@
 """Risk Analysis Agent: returns structured risk level + concise Markdown assessment."""
 
 import json
+import logging
 from typing import Any, Dict, List, Union
 from pydantic import BaseModel, Field
 
 from app.agents.llm_client import call_llm_structured
+
+logger = logging.getLogger(__name__)
 
 
 class _RiskLLMShape(BaseModel):
@@ -80,6 +83,9 @@ def run_risk_agent(
             execution_time_ms=elapsed_ms,
         )
 
+    if err:
+        logger.warning(f"Risk agent fell back ({risk_metrics.get('symbol')}): {err}")
+
     m = risk_metrics.get("metrics", {})
     md = "\n".join([
         "### Risk Profile",
@@ -88,9 +94,6 @@ def run_risk_agent(
         "### Key Metrics",
         f"- **95% Daily VaR:** {m.get('var_95_daily_pct')}%",
         f"- **Sharpe Proxy:** {m.get('sharpe_proxy')}",
-        "",
-        "### Setup Note",
-        "- Configure `GEMINI_API_KEY` on the backend for full cross-signal conflict & scenario analysis." + (f" (`{err}`)" if err else ""),
     ])
     return RiskAgentOutput(
         status="fallback",
