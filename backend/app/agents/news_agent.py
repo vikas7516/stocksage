@@ -76,7 +76,7 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
         }
         for idx, item in enumerate(news_items)
     ]
-    user_prompt = f"Analyze recent news for {symbol}:\n{json.dumps(numbered, indent=2)}"
+    user_prompt = f"Analyze recent news for {symbol}:\n{json.dumps(numbered, separators=(',', ':'))}"
     parsed, err, elapsed_ms = call_groq_structured(SYSTEM_PROMPT, user_prompt, _NewsLLMShape)
 
     class_map = {}

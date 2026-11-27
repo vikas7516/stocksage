@@ -67,7 +67,7 @@ def run_risk_agent(
             "summary": news_summary.get("summary"),
         },
     }
-    user_prompt = f"Evaluate risks and cross-agent conflicts:\n{json.dumps(payload, indent=2)}"
+    user_prompt = f"Evaluate risks and cross-agent conflicts:\n{json.dumps(payload, separators=(',', ':'))}"
     parsed, err, elapsed_ms = call_groq_structured(SYSTEM_PROMPT, user_prompt, _RiskLLMShape)
 
     risk_level = risk_metrics.get("risk_level", "MODERATE")
@@ -87,6 +87,7 @@ def run_risk_agent(
         status="fallback",
         risk_level=risk_level,
         summary=f"Quantitative risk for {risk_metrics.get('symbol')} is {risk_level} with {risk_metrics.get('metrics', {}).get('max_drawdown_pct')}% max drawdown.",
+        advisory_stance=f"{risk_level} quantitative risk profile; weigh historical drawdown against fundamental quality.",
         conflicting_findings=[],
         alternative_scenarios=["Monitor volatility and earnings updates before drawing conclusions."],
         limitations=risk_metrics.get("limitations", []) + ([f"LLM fallback: {err}"] if err else []),

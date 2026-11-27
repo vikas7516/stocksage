@@ -43,7 +43,7 @@ Return ONLY valid JSON matching this schema:
 
 
 def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutput:
-    user_prompt = f"Analyze these computed fundamental metrics:\n{json.dumps(fundamentals, indent=2)}"
+    user_prompt = f"Analyze these computed fundamental metrics:\n{json.dumps(fundamentals, separators=(',', ':'))}"
     parsed, err, elapsed_ms = call_groq_structured(SYSTEM_PROMPT, user_prompt, _FundamentalLLMShape)
 
     if parsed is not None:

@@ -36,7 +36,7 @@ def call_groq_structured(
         return None, "GROQ_API_KEY is not configured.", 0
 
     try:
-        client = Groq(api_key=settings.groq_api_key, max_retries=1)
+        client = Groq(api_key=settings.groq_api_key, max_retries=0)
         resp = client.chat.completions.create(
             model=settings.groq_model,
             messages=[
@@ -73,7 +73,7 @@ def call_groq_chat(
         )
 
     try:
-        client = Groq(api_key=settings.groq_api_key, max_retries=1)
+        client = Groq(api_key=settings.groq_api_key, max_retries=0)
         resp = client.chat.completions.create(
             model=settings.groq_model,
             messages=[{"role": "system", "content": system_prompt}, *messages],

@@ -83,14 +83,10 @@ def run_all_individual_agents(
     risk_data = assess_risk_metrics(window_df, symbol=yf_symbol, fundamentals=fundamental_data)
     news_data = fetch_stock_news(symbol=yf_symbol, company_name=company_name)
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        f_fund = pool.submit(run_fundamental_agent, fundamental_data)
-        f_tech = pool.submit(run_technical_agent, technical_data)
-        f_news = pool.submit(run_news_agent, yf_symbol, news_data)
-
-        fund_out = f_fund.result()
-        tech_out = f_tech.result()
-        news_out = f_news.result()
+    # Run sequentially with compact payloads to avoid Groq free-tier burst 429 throttling
+    fund_out = run_fundamental_agent(fundamental_data)
+    tech_out = run_technical_agent(technical_data)
+    news_out = run_news_agent(yf_symbol, news_data)
 
     risk_out = run_risk_agent(
         risk_metrics=risk_data,
