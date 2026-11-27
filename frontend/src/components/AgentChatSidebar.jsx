@@ -133,16 +133,41 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
     setSending(true)
 
     try {
-      const compactContext = researchData
-        ? {
-            symbol: researchData.resolved?.yfinance_symbol,
-            technical_indicators: researchData.technical?.indicators,
-            technical_signals: researchData.technical?.signals,
+      let domainContext = { symbol: researchData?.resolved?.yfinance_symbol }
+      if (researchData) {
+        if (targetAgent === 'fundamental') {
+          domainContext = {
+            ...domainContext,
             fundamentals: researchData.fundamentals,
-            risk: researchData.risk,
-            agent_report: agents?.[targetAgent]?.report_markdown || agents?.[targetAgent]?.summary,
+            agent_report: agents?.fundamental?.report_markdown || agents?.fundamental?.summary,
           }
-        : {}
+        } else if (targetAgent === 'technical') {
+          domainContext = {
+            ...domainContext,
+            latest_price: researchData.technical?.latest_price,
+            period_return_pct: researchData.technical?.period_return_pct,
+            indicators: researchData.technical?.indicators,
+            signals: researchData.technical?.signals,
+            agent_report: agents?.technical?.report_markdown || agents?.technical?.summary,
+          }
+        } else if (targetAgent === 'news') {
+          domainContext = {
+            ...domainContext,
+            overall_sentiment: agents?.news?.overall_sentiment,
+            articles: agents?.news?.articles || researchData.news || [],
+            conflicting_reports: agents?.news?.conflicting_reports || [],
+            agent_report: agents?.news?.report_markdown || agents?.news?.summary,
+          }
+        } else if (targetAgent === 'risk') {
+          domainContext = {
+            ...domainContext,
+            risk: researchData.risk,
+            conflicting_findings: agents?.risk?.conflicting_findings || [],
+            limitations: agents?.risk?.limitations || [],
+            agent_report: agents?.risk?.report_markdown || agents?.risk?.summary,
+          }
+        }
+      }
 
       const res = await fetch(`${API_URL}/api/agents/chat`, {
         method: 'POST',
@@ -151,7 +176,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
           symbol,
           question: q,
           agent_focus: targetAgent,
-          context: compactContext,
+          context: domainContext,
           history: (chatsByAgent[targetAgent] || []).map((m) => ({
             role: m.role,
             content: m.content,

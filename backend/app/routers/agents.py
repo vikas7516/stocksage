@@ -166,20 +166,22 @@ def run_single_agent(
 @router.post("/chat", response_model=AgentChatResponse)
 def agent_chat_followup(req: AgentChatRequest):
     """Conversational follow-up grounded in the current stock's computed metrics and agent findings."""
-    agent_label = {
-        "all": "StockSage Research Team",
-        "fundamental": "Fundamental Analysis Agent",
-        "technical": "Technical Analysis Agent",
-        "news": "News & Sentiment Agent",
-        "risk": "Risk Analysis Agent",
-    }[req.agent_focus]
+    agent_scope = {
+        "fundamental": ("Fundamental Analysis Agent", "ONLY discuss valuation, profitability, balance sheet, growth, and financial statements."),
+        "technical": ("Technical Analysis Agent", "ONLY discuss price action, moving averages, RSI, MACD, volatility, and chart levels."),
+        "news": ("News & Sentiment Agent", "ONLY discuss recent news headlines, corporate events, announcements, and news sentiment. Do NOT cite SMA/RSI/MACD or P/E/ROE."),
+        "risk": ("Risk Analysis Agent", "Discuss quantitative risk (volatility, drawdown, VaR), conflicting signals, and downside/upside scenarios."),
+    }
+    agent_label, scope_rule = agent_scope[req.agent_focus]
 
     compact_ctx = req.context or {}
     system_prompt = (
-        f"You are the {agent_label} on StockSage (an NSE research advisory platform, NOT a broker). "
-        f"Reply in concise Markdown using short bullet points (`- `) and **bold** numbers — NO long paragraphs. "
-        f"Use ONLY the verified context below for {req.symbol}; if something is missing, say so.\n\n"
-        f"VERIFIED CONTEXT:\n{json.dumps(compact_ctx)[:2800]}"
+        f"You are the {agent_label} on StockSage, an agentic stock research & advisory platform.\n"
+        f"DOMAIN RULE: {scope_rule}\n"
+        f"ADVISORY RULE: When asked whether to invest/buy/hold/sell, NEVER refuse or start with 'I am an AI / I cannot provide buy/sell recommendations'. "
+        f"Instead, give a direct, data-backed research advisory stance from YOUR domain (e.g., Supportive / Cautious / Mixed / Wait-and-Watch), cite the specific evidence in your context, and end with a short 1-line informational-use note.\n"
+        f"FORMAT: Concise Markdown with short bullets (`- `) and **bold** key points. No long paragraphs.\n\n"
+        f"VERIFIED DOMAIN CONTEXT FOR {req.symbol}:\n{json.dumps(compact_ctx, separators=(',', ':'))[:3500]}"
     )
 
     recent_history = [

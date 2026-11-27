@@ -34,6 +34,25 @@ def test_cors_allows_render_frontend_origin():
     assert preflight.headers.get("access-control-allow-origin") == origin
 
 
+def test_agent_chat_domain_prompt_forbids_refusal_and_isolates_news_scope():
+    with patch("app.routers.agents.call_llm_chat", return_value=("### News Stance\n- **Supportive:** Recent earnings & AI news.", None, 120)) as mock_chat:
+        res = client.post(
+            "/api/agents/chat",
+            json={
+                "symbol": "RELIANCE",
+                "question": "should i invest in it?",
+                "agent_focus": "news",
+                "context": {"articles": [{"title": "Reliance expands retail footprint"}]},
+                "history": [],
+            },
+        )
+        assert res.status_code == 200
+        sys_prompt = mock_chat.call_args[0][0]
+        assert "News & Sentiment Agent" in sys_prompt
+        assert "Do NOT cite SMA/RSI/MACD or P/E/ROE" in sys_prompt
+        assert "NEVER refuse" in sys_prompt
+
+
 def test_public_search_resolves_nse_stocks():
     res = client.get("/api/search/public?q=inf")
     assert res.status_code == 200
