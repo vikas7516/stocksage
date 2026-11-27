@@ -79,7 +79,7 @@ def test_llm_client_retries_503_and_falls_back_to_secondary_model():
     }
 
     mock_client = MagicMock()
-    # 2 attempts on primary (503, 503), then 503 on preview alias, then 200 on gemini-2.5-flash-lite
+    # 3 consecutive 503s on gemini-3.1-flash-lite, recovered on 4th attempt
     mock_client.post.side_effect = [resp_503, resp_503, resp_503, resp_200]
     mock_cm = MagicMock()
     mock_cm.__enter__.return_value = mock_client

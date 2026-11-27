@@ -13,10 +13,9 @@ from app.core.config import settings
 T = TypeVar("T", bound=BaseModel)
 
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-_FALLBACK_MODELS = [
+_GEMINI_31_FLASH_LITE_ALIASES = [
+    "gemini-3.1-flash-lite",
     "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
 ]
 
 
@@ -30,7 +29,7 @@ def _strip_fences(raw: str) -> str:
 
 def _candidate_models() -> List[str]:
     models = [settings.gemini_model]
-    for m in _FALLBACK_MODELS:
+    for m in _GEMINI_31_FLASH_LITE_ALIASES:
         if m not in models:
             models.append(m)
     return models
@@ -83,8 +82,8 @@ def call_llm_structured(
                 "generationConfig": _generation_config_for(model_id, temperature, max_tokens, json_mode=True),
             }
 
-            # Up to 2 attempts on primary model with short jittered backoff on 503/429
-            attempts = 2 if model_idx == 0 else 1
+            # Up to 4 attempts on primary Gemini 3.1 Flash Lite with exponential jittered backoff on 503/429
+            attempts = 4 if model_idx == 0 else 2
             for attempt in range(attempts):
                 try:
                     resp = client.post(
@@ -102,16 +101,17 @@ def call_llm_structured(
                     last_err = f"HTTP {resp.status_code}: {resp.text[:250]}"
                     if resp.status_code in (429, 503):
                         if attempt < attempts - 1:
-                            time.sleep(0.8 + random.uniform(0.2, 0.7))
+                            delay = min(4.0, (0.8 * (2 ** attempt)) + random.uniform(0.1, 0.5))
+                            time.sleep(delay)
                             continue
-                        break  # Try next fallback model
+                        break
                     if resp.status_code in (400, 404):
-                        break  # Model alias mismatch or config mismatch -> try next model
+                        break
                     break
                 except Exception as exc:
                     last_err = str(exc)
                     if attempt < attempts - 1:
-                        time.sleep(0.6)
+                        time.sleep(0.8 * (attempt + 1))
                         continue
                     break
 
@@ -151,7 +151,7 @@ def call_llm_chat(
                 "contents": contents,
                 "generationConfig": _generation_config_for(model_id, temperature, max_tokens, json_mode=False),
             }
-            attempts = 2 if model_idx == 0 else 1
+            attempts = 4 if model_idx == 0 else 2
             for attempt in range(attempts):
                 try:
                     resp = client.post(
@@ -167,7 +167,8 @@ def call_llm_chat(
                     last_err = f"HTTP {resp.status_code}: {resp.text[:250]}"
                     if resp.status_code in (429, 503):
                         if attempt < attempts - 1:
-                            time.sleep(0.8 + random.uniform(0.2, 0.7))
+                            delay = min(4.0, (0.8 * (2 ** attempt)) + random.uniform(0.1, 0.5))
+                            time.sleep(delay)
                             continue
                         break
                     if resp.status_code in (400, 404):
@@ -176,7 +177,7 @@ def call_llm_chat(
                 except Exception as exc:
                     last_err = str(exc)
                     if attempt < attempts - 1:
-                        time.sleep(0.6)
+                        time.sleep(0.8 * (attempt + 1))
                         continue
                     break
 
