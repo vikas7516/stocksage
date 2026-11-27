@@ -46,10 +46,10 @@ def call_llm_structured(
     user_prompt: str,
     schema_cls: Type[T],
     temperature: float = 0.25,
-    max_tokens: int = 1200,
+    max_tokens: int = 2048,
 ) -> Tuple[Optional[T], Optional[str], int]:
     """
-    Calls Gemini API (`gemini-3.1-flash-lite`) with JSON output mode and low thinking level,
+    Calls Gemini API (`gemini-3.1-flash-lite`) with JSON output mode and high thinking level,
     validating against `schema_cls`.
     Returns (validated_model_or_None, error_message_or_None, latency_ms).
     """
@@ -64,7 +64,7 @@ def call_llm_structured(
             "responseMimeType": "application/json",
             "temperature": temperature,
             "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingLevel": "low"},
+            "thinkingConfig": {"thinkingLevel": "high"},
         },
     }
 
@@ -101,7 +101,7 @@ def call_llm_chat(
     system_prompt: str,
     messages: List[Dict[str, str]],
     temperature: float = 0.35,
-    max_tokens: int = 900,
+    max_tokens: int = 1200,
 ) -> Tuple[str, Optional[str], int]:
     """Calls Gemini API for grounded conversational follow-ups in the Agent Sidebar."""
     start = time.perf_counter()
@@ -126,7 +126,7 @@ def call_llm_chat(
         "generationConfig": {
             "temperature": temperature,
             "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingLevel": "low"},
+            "thinkingConfig": {"thinkingLevel": "high"},
         },
     }
 

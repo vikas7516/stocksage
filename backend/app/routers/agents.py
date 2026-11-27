@@ -50,7 +50,7 @@ class FullAgentResearchResponse(BaseModel):
 class AgentChatRequest(BaseModel):
     symbol: str
     question: str = Field(..., min_length=1, max_length=1000)
-    agent_focus: Literal["all", "fundamental", "technical", "news", "risk"] = "all"
+    agent_focus: Literal["fundamental", "technical", "news", "risk"] = "fundamental"
     context: Optional[Dict[str, Any]] = None
     history: List[Dict[str, str]] = Field(default_factory=list)
 
@@ -83,22 +83,41 @@ def run_all_individual_agents(
     risk_data = assess_risk_metrics(window_df, symbol=yf_symbol, fundamentals=fundamental_data)
     news_data = fetch_stock_news(symbol=yf_symbol, company_name=company_name)
 
-    # Run Fundamental, Technical, News in parallel (Gemini 3.1 Flash Lite supports 250k TPM / 15 RPM)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    # Run all 4 Milestone 2 agents simultaneously in parallel (4 RPM << 15 RPM limit)
+    risk_context_fund = {
+        "valuation": fundamental_data.get("valuation"),
+        "profitability": fundamental_data.get("profitability"),
+        "financial_stability": fundamental_data.get("financial_stability"),
+        "growth": fundamental_data.get("growth"),
+        "data_quality": fundamental_data.get("data_quality"),
+    }
+    risk_context_tech = {
+        "latest_price": technical_data.get("latest_price"),
+        "period_return_pct": technical_data.get("period_return_pct"),
+        "indicators": technical_data.get("indicators"),
+        "signals": technical_data.get("signals"),
+    }
+    risk_context_news = [
+        {"title": n["title"], "publisher": n["publisher"], "published_at": n.get("published_at")}
+        for n in news_data[:6]
+    ]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
         f_fund = pool.submit(run_fundamental_agent, fundamental_data)
         f_tech = pool.submit(run_technical_agent, technical_data)
         f_news = pool.submit(run_news_agent, yf_symbol, news_data)
+        f_risk = pool.submit(
+            run_risk_agent,
+            risk_data,
+            risk_context_fund,
+            risk_context_tech,
+            risk_context_news,
+        )
 
         fund_out = f_fund.result()
         tech_out = f_tech.result()
         news_out = f_news.result()
-
-    risk_out = run_risk_agent(
-        risk_metrics=risk_data,
-        fundamental_summary=fund_out.model_dump(),
-        technical_summary=tech_out.model_dump(),
-        news_summary=news_out.model_dump(),
-    )
+        risk_out = f_risk.result()
 
     return FullAgentResearchResponse(
         resolved=TickerResult(**resolved),
