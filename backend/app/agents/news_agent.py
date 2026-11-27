@@ -1,4 +1,4 @@
-"""News & Sentiment Analysis Agent: classifies corporate events & preserves source links/dates."""
+"""News & Sentiment Analysis Agent: returns structured article tags + concise Markdown briefing."""
 
 import json
 from typing import Any, Dict, List, Literal, Optional
@@ -15,7 +15,7 @@ class _ArticleClassification(BaseModel):
 
 
 class _NewsLLMShape(BaseModel):
-    summary: str
+    report_markdown: str
     overall_sentiment: Literal["positive", "negative", "neutral", "mixed"]
     classifications: List[_ArticleClassification] = Field(default_factory=list)
     conflicting_reports: List[str] = Field(default_factory=list)
@@ -36,6 +36,7 @@ class NewsAgentOutput(BaseModel):
     agent_name: str = "news"
     status: str = "success"
     summary: str
+    report_markdown: str = ""
     overall_sentiment: str
     articles: List[ArticleSentiment] = Field(default_factory=list)
     conflicting_reports: List[str] = Field(default_factory=list)
@@ -43,24 +44,37 @@ class NewsAgentOutput(BaseModel):
 
 
 SYSTEM_PROMPT = """You are the News & Sentiment Analysis Agent for StockSage.
-Given numbered recent headlines (from Yahoo Finance & Google News RSS), summarize key corporate events (earnings, deals, acquisitions, regulatory developments), explain why they matter to investors, classify sentiment per article, and flag conflicting reports.
-Never invent headlines or URLs.
+Analyze the numbered headlines (from Yahoo Finance & Google News RSS). Summarize corporate events (earnings, deals, acquisitions, regulatory news), classify each article, and flag conflicting reports. Never invent headlines or URLs.
+
+FORMATTING RULES FOR `report_markdown`:
+- NO long paragraphs (max 2 short sentences per paragraph).
+- Use clean Markdown with `###` headings and concise bullet points (`- `).
+- Structure strictly as:
+  ### Sentiment Overview
+  1-2 crisp sentences summarizing overall news tone and main drivers.
+  ### Key Headlines
+  - **[Positive/Negative/Neutral]** Short takeaway citing publisher & date. (3-4 bullets max)
+  ### Conflicts & Watchouts
+  - Mention any opposing reports, or write `- No major conflicting headlines found.`
+
 Return ONLY valid JSON:
 {
-  "summary": "3-4 clear sentences explaining the main news drivers, corporate catalysts, and overall investor sentiment.",
+  "report_markdown": "<markdown string following the exact rules above>",
   "overall_sentiment": "positive | negative | neutral | mixed",
   "classifications": [
-    {"index": 0, "sentiment": "positive | negative | neutral", "event_type": "Earnings | Regulatory | Corporate | Analyst | Market", "takeaway": "1 concise sentence explaining why this headline matters"}
+    {"index": 0, "sentiment": "positive | negative | neutral", "event_type": "Earnings | Regulatory | Corporate | Analyst | Market", "takeaway": "1 concise sentence"}
   ],
-  "conflicting_reports": ["any opposing headlines or uncertainties, or empty array"]
+  "conflicting_reports": ["any opposing headlines or empty array"]
 }"""
 
 
 def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOutput:
     if not news_items:
+        md = f"### Sentiment Overview\nNo recent news headlines were retrieved for **{symbol}**."
         return NewsAgentOutput(
             status="unavailable",
-            summary=f"No recent news articles were retrieved for {symbol} from yfinance or Google News RSS.",
+            summary=md,
+            report_markdown=md,
             overall_sentiment="unavailable",
             articles=[],
             conflicting_reports=[],
@@ -100,18 +114,34 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
     if parsed is not None:
         return NewsAgentOutput(
             status="success",
-            summary=parsed.summary,
+            summary=parsed.report_markdown,
+            report_markdown=parsed.report_markdown,
             overall_sentiment=parsed.overall_sentiment,
             articles=enriched,
             conflicting_reports=parsed.conflicting_reports,
             execution_time_ms=elapsed_ms,
         )
 
+    bullets = [
+        f"- [{a.title}]({a.source_url}) — *{a.publisher}*"
+        + (f" ({a.published_at[:10]})" if a.published_at else "")
+        for a in enriched[:5]
+    ]
+    md = "\n".join([
+        "### Sentiment Overview",
+        f"Retrieved **{len(enriched)}** recent headlines for **{symbol}**.",
+        "",
+        "### Headlines",
+        *bullets,
+        "",
+        "- Configure `GEMINI_API_KEY` on the backend for full AI sentiment synthesis." + (f" (`{err}`)" if err else ""),
+    ])
     return NewsAgentOutput(
         status="fallback",
-        summary=f"Retrieved {len(enriched)} recent headlines for {symbol} from yfinance and Google News RSS.",
+        summary=md,
+        report_markdown=md,
         overall_sentiment="neutral",
         articles=enriched,
-        conflicting_reports=[f"Fallback reason: {err}"] if err else [],
+        conflicting_reports=[],
         execution_time_ms=elapsed_ms,
     )

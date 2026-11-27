@@ -1,4 +1,4 @@
-"""Risk Analysis Agent: evaluates volatility/drawdown, surfaces inter-agent conflicts, and frames scenarios."""
+"""Risk Analysis Agent: returns structured risk level + concise Markdown assessment."""
 
 import json
 from typing import Any, Dict, List, Union
@@ -8,10 +8,8 @@ from app.agents.llm_client import call_llm_structured
 
 
 class _RiskLLMShape(BaseModel):
-    summary: str
-    advisory_stance: str
+    report_markdown: str
     conflicting_findings: List[str] = Field(default_factory=list)
-    alternative_scenarios: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
 
 
@@ -20,23 +18,34 @@ class RiskAgentOutput(BaseModel):
     status: str = "success"
     risk_level: str
     summary: str
-    advisory_stance: str = ""
+    report_markdown: str = ""
     conflicting_findings: List[str] = Field(default_factory=list)
-    alternative_scenarios: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
     execution_time_ms: int = 0
 
 
 SYSTEM_PROMPT = """You are the Risk Analysis Agent for StockSage.
-Review the quantitative risk metrics (volatility, maximum drawdown, 95% VaR, Sharpe proxy) alongside the company's fundamental ratios, technical trend signals, and recent news headlines.
-Explain in clear, plain English how risky/volatile the stock has been, flag ANY disagreements across the data (e.g., bullish chart trend vs high valuation, weak growth, or negative news), outline bull vs bear scenarios, and note data limitations.
+Review the quantitative risk metrics (volatility, maximum drawdown, 95% VaR, Sharpe proxy) alongside fundamentals, technical trend, and news headlines.
+Highlight disagreements across signals, frame bull/bear scenarios, and note data limitations.
+
+FORMATTING RULES FOR `report_markdown`:
+- NO long paragraphs (max 2 short sentences per paragraph).
+- Use clean Markdown with `###` headings, **bold** values, and short bullets (`- `).
+- Structure strictly as:
+  ### Risk Profile
+  1-2 crisp sentences translating volatility, drawdown, and VaR into practical downside awareness.
+  ### Conflicting Signals
+  - Highlight any disagreement across trend, fundamentals, and news (or state if aligned).
+  ### Scenarios & Stance
+  - **Upside Case:** ...
+  - **Downside Case:** ...
+  - **Advisory Stance:** 1-2 balanced sentences weighing upside vs risk.
+
 Return ONLY valid JSON:
 {
-  "summary": "3-4 clear sentences translating drawdown, volatility, and VaR into practical downside risk awareness for an everyday investor.",
-  "advisory_stance": "1-2 sentence balanced risk-aware advisory stance weighing upside vs downside without guaranteeing returns.",
-  "conflicting_findings": ["specific disagreements across technicals, fundamentals, and news, or empty array if aligned"],
-  "alternative_scenarios": ["Bull case scenario", "Bear case scenario"],
-  "limitations": ["missing data, short window, or uncertainty notes"]
+  "report_markdown": "<markdown string following the exact rules above>",
+  "conflicting_findings": ["concise conflict 1, or empty array"],
+  "limitations": ["short window / missing data notes"]
 }"""
 
 
@@ -56,7 +65,7 @@ def run_risk_agent(
         "technicals": technical_context,
         "recent_news": news_context,
     }
-    user_prompt = f"Evaluate risks and conflicting signals across all data:\n{json.dumps(payload, separators=(',', ':'))}"
+    user_prompt = f"Evaluate risks and conflicting signals:\n{json.dumps(payload, separators=(',', ':'))}"
     parsed, err, elapsed_ms = call_llm_structured(SYSTEM_PROMPT, user_prompt, _RiskLLMShape)
 
     risk_level = risk_metrics.get("risk_level", "MODERATE")
@@ -64,21 +73,31 @@ def run_risk_agent(
         return RiskAgentOutput(
             status="success",
             risk_level=risk_level,
-            summary=parsed.summary,
-            advisory_stance=parsed.advisory_stance,
+            summary=parsed.report_markdown,
+            report_markdown=parsed.report_markdown,
             conflicting_findings=parsed.conflicting_findings,
-            alternative_scenarios=parsed.alternative_scenarios,
             limitations=parsed.limitations or risk_metrics.get("limitations", []),
             execution_time_ms=elapsed_ms,
         )
 
+    m = risk_metrics.get("metrics", {})
+    md = "\n".join([
+        "### Risk Profile",
+        f"**{risk_metrics.get('symbol')}** carries a **{risk_level}** quantitative risk profile with **{m.get('max_drawdown_pct')}%** max drawdown and **{m.get('annualized_volatility_pct')}%** annualized volatility.",
+        "",
+        "### Key Metrics",
+        f"- **95% Daily VaR:** {m.get('var_95_daily_pct')}%",
+        f"- **Sharpe Proxy:** {m.get('sharpe_proxy')}",
+        "",
+        "### Setup Note",
+        "- Configure `GEMINI_API_KEY` on the backend for full cross-signal conflict & scenario analysis." + (f" (`{err}`)" if err else ""),
+    ])
     return RiskAgentOutput(
         status="fallback",
         risk_level=risk_level,
-        summary=f"Quantitative risk for {risk_metrics.get('symbol')} is {risk_level} with {risk_metrics.get('metrics', {}).get('max_drawdown_pct')}% peak-to-trough drawdown.",
-        advisory_stance="Add GEMINI_API_KEY in backend environment to unlock full AI cross-signal conflict & scenario analysis.",
+        summary=md,
+        report_markdown=md,
         conflicting_findings=[],
-        alternative_scenarios=["Monitor volatility and earnings updates before drawing conclusions."],
-        limitations=risk_metrics.get("limitations", []) + ([f"Fallback reason: {err}"] if err else []),
+        limitations=risk_metrics.get("limitations", []),
         execution_time_ms=elapsed_ms,
     )

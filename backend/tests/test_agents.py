@@ -1,4 +1,4 @@
-"""Unit tests verifying structured agent outputs and fallback behavior."""
+"""Unit tests verifying structured agent outputs and Markdown formatting."""
 
 from unittest.mock import patch
 from app.agents.fundamental_agent import FundamentalAgentOutput, run_fundamental_agent
@@ -15,30 +15,28 @@ def test_gemini_thought_parts_are_filtered():
                 "content": {
                     "parts": [
                         {"text": "internal reasoning...", "thought": True},
-                        {"text": '{"summary":"clean"}'},
+                        {"text": '{"report_markdown":"### Snapshot\\nClean"}'},
                     ]
                 }
             }
         ]
     }
-    assert _extract_answer_text(resp) == '{"summary":"clean"}'
+    assert _extract_answer_text(resp) == '{"report_markdown":"### Snapshot\\nClean"}'
 
 
 def test_fundamental_agent_structured_output():
     from app.agents.fundamental_agent import _FundamentalLLMShape
 
     fake_llm = _FundamentalLLMShape(
-        summary="Strong margins and low debt with reasonable valuation.",
+        report_markdown="### Snapshot\nStrong margins and low debt.\n\n### Investor Takeaway\nBalanced valuation.",
         valuation_assessment="fairly_valued",
         financial_health="strong",
-        investor_takeaway="Balanced valuation supported by strong cash generation and low debt.",
-        key_highlights=["ROE 29%", "Net Margin 17%"],
-        data_gaps=[],
     )
     with patch("app.agents.fundamental_agent.call_llm_structured", return_value=(fake_llm, None, 310)):
         out = run_fundamental_agent({"symbol": "INFY.NS", "valuation": {"pe_ratio": 25.0}})
         assert isinstance(out, FundamentalAgentOutput)
         assert out.status == "success"
+        assert "### Snapshot" in out.report_markdown
         assert out.valuation_assessment == "fairly_valued"
         assert out.execution_time_ms == 310
 
@@ -53,6 +51,7 @@ def test_technical_agent_fallback_preserves_disclaimer():
         })
         assert isinstance(out, TechnicalAgentOutput)
         assert out.status == "fallback"
+        assert "### Trend Summary" in out.report_markdown
         assert "not be treated as guaranteed predictions" in out.disclaimer
 
 
@@ -60,7 +59,7 @@ def test_news_agent_preserves_urls_and_dates():
     from app.agents.news_agent import _ArticleClassification, _NewsLLMShape
 
     fake_llm = _NewsLLMShape(
-        summary="Positive deal win reported.",
+        report_markdown="### Sentiment Overview\nPositive deal win reported.",
         overall_sentiment="positive",
         classifications=[
             _ArticleClassification(index=0, sentiment="positive", event_type="Corporate", takeaway="Major cloud deal signed.")
@@ -78,6 +77,7 @@ def test_news_agent_preserves_urls_and_dates():
         out = run_news_agent("INFY.NS", articles)
         assert isinstance(out, NewsAgentOutput)
         assert out.overall_sentiment == "positive"
+        assert "### Sentiment Overview" in out.report_markdown
         assert out.articles[0].source_url == "https://example.com/infy-deal"
         assert out.articles[0].published_at == "2026-11-26T10:00:00+00:00"
 
@@ -86,14 +86,13 @@ def test_risk_agent_structured_output():
     from app.agents.risk_agent import _RiskLLMShape
 
     fake_llm = _RiskLLMShape(
-        summary="Moderate volatility with technicals bullish against slower revenue growth.",
-        advisory_stance="Moderate risk profile; balance upward trend against margin headwinds.",
+        report_markdown="### Risk Profile\nModerate volatility.\n\n### Conflicting Signals\n- Uptrend vs flat revenue.",
         conflicting_findings=["Technical uptrend contrasts with flat YoY revenue growth."],
-        alternative_scenarios=["Margin expansion on AI deals", "US BFSI slowdown"],
         limitations=["3-month window"],
     )
     with patch("app.agents.risk_agent.call_llm_structured", return_value=(fake_llm, None, 220)):
         out = run_risk_agent({"symbol": "INFY.NS", "risk_level": "MODERATE"}, {}, {}, {})
         assert isinstance(out, RiskAgentOutput)
         assert out.risk_level == "MODERATE"
+        assert "### Risk Profile" in out.report_markdown
         assert len(out.conflicting_findings) == 1

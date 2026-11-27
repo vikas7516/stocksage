@@ -177,8 +177,8 @@ def agent_chat_followup(req: AgentChatRequest):
     compact_ctx = req.context or {}
     system_prompt = (
         f"You are the {agent_label} on StockSage (an NSE research advisory platform, NOT a broker). "
-        f"Answer concisely and clearly using ONLY the verified metrics below for {req.symbol}. "
-        f"If data is missing, state that explicitly.\n\n"
+        f"Reply in concise Markdown using short bullet points (`- `) and **bold** numbers — NO long paragraphs. "
+        f"Use ONLY the verified context below for {req.symbol}; if something is missing, say so.\n\n"
         f"VERIFIED CONTEXT:\n{json.dumps(compact_ctx)[:2800]}"
     )
 
