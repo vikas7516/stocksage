@@ -1,7 +1,7 @@
 # Slide 1: Milestone 2 Overview (Weeks 3 & 4)
 ## StockSage — Financial Analysis Tools & Individual Agents
 - **Goal:** Build verified financial/technical calculations, integrate news sources, and implement 4 independent research agents.
-- **Tech Stack:** FastAPI, pandas, NumPy, yfinance, Google News RSS, Gemini (`gemini-3.1-flash-lite`), React + Plotly, Supabase.
+- **Tech Stack:** FastAPI, pandas, NumPy, yfinance, Google News RSS, Gemini (`gemini-3.5-flash-lite`), React + Plotly, Supabase.
 - **Database Update:** Seeded 60 NSE stocks into Supabase `ticker_map` and wired live search.
 
 ---
@@ -33,4 +33,3 @@ All 4 agents run in parallel and return strict `Pydantic`-validated schemas:
   - Financial ratios, technical indicators & risk metrics tested reproducibly ✅
   - Interactive technical charts available ✅
   - News summaries include source links and publication dates ✅
-- **Next (Milestone 3 — Weeks 5 & 6):** LangGraph Supervisor Agent for retries and consolidated report generation.

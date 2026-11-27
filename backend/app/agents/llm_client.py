@@ -13,10 +13,7 @@ from app.core.config import settings
 T = TypeVar("T", bound=BaseModel)
 
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-_GEMINI_31_FLASH_LITE_ALIASES = [
-    "gemini-3.1-flash-lite",
-    "gemini-3.1-flash-lite-preview",
-]
+_FALLBACK_MODELS = ["gemini-3.1-flash-lite"]
 
 
 def _strip_fences(raw: str) -> str:
@@ -29,7 +26,7 @@ def _strip_fences(raw: str) -> str:
 
 def _candidate_models() -> List[str]:
     models = [settings.gemini_model]
-    for m in _GEMINI_31_FLASH_LITE_ALIASES:
+    for m in _FALLBACK_MODELS:
         if m not in models:
             models.append(m)
     return models
