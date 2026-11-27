@@ -6,28 +6,28 @@ import {
   Card,
   CardContent,
   Chip,
-  Container,
   Divider,
+  Drawer,
   Grid,
+  IconButton,
   Link,
   Stack,
+  TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ShowChartIcon from '@mui/icons-material/ShowChart'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
+import SearchIcon from '@mui/icons-material/Search'
 import GearAnimation from '../components/GearAnimation'
 import StockChart from '../components/StockChart'
+import AgentChatSidebar from '../components/AgentChatSidebar'
 
 const QUICK_SWITCH = ['INFY', 'TCS', 'RELIANCE', 'HDFCBANK', 'TATAMOTORS']
-
-const WEEK4_AGENTS = [
-  { name: 'Fundamental Agent', desc: 'Interprets P/E, ROE, debt & earnings growth via Groq (qwen/qwen3.8-27b).', status: 'Week 4' },
-  { name: 'Technical Agent', desc: 'Explains SMA, EMA, RSI, MACD & trend conditions.', status: 'Week 4' },
-  { name: 'News & Sentiment Agent', desc: 'Classifies yfinance & Google News RSS headlines with citations.', status: 'Week 4' },
-  { name: 'Risk & Supervisor Agents', desc: 'Flags conflicting evidence & compiles final report (Week 4–6).', status: 'Week 4–6' },
-]
 
 function fmtVal(val, suffix = '') {
   if (val === null || val === undefined) return 'N/A'
@@ -40,29 +40,40 @@ function fmtMarketCap(val) {
   return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 0 })} Cr`
 }
 
+function sentimentColor(sentiment) {
+  if (sentiment === 'positive') return { bg: '#ecfdf5', fg: '#059669' }
+  if (sentiment === 'negative') return { bg: '#fef2f2', fg: '#dc2626' }
+  return { bg: '#f1f5f9', fg: '#475569' }
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const theme = useTheme()
+  const isDesktop = useMediaQuery(theme.breakpoints.up('lg'))
   const [searchParams, setSearchParams] = useSearchParams()
+
   const initialSymbol =
     searchParams.get('symbol') ||
     localStorage.getItem('stocksage_last_symbol') ||
     'INFY'
 
   const [symbol, setSymbol] = useState(initialSymbol)
+  const [tickerInput, setTickerInput] = useState(initialSymbol)
   const [period, setPeriod] = useState('3mo')
-  const [snapshot, setSnapshot] = useState(null)
+  const [researchData, setResearchData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [mobileChatOpen, setMobileChatOpen] = useState(false)
 
   useEffect(() => {
     let active = true
-    const loadSnapshot = async () => {
+    const loadResearch = async () => {
       setLoading(true)
       setError('')
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       try {
         const res = await fetch(
-          `${apiUrl}/api/analysis/snapshot?symbol=${encodeURIComponent(symbol)}&period=${period}`
+          `${apiUrl}/api/agents/analyze?symbol=${encodeURIComponent(symbol)}&period=${period}`
         )
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}))
@@ -70,29 +81,33 @@ export default function DashboardPage() {
         }
         const json = await res.json()
         if (active) {
-          setSnapshot(json)
+          setResearchData(json)
           localStorage.setItem('stocksage_last_symbol', symbol)
         }
       } catch (err) {
-        if (active) setError(err.message || 'Could not reach backend analysis API.')
+        if (active) setError(err.message || 'Could not reach backend research API.')
       } finally {
         if (active) setLoading(false)
       }
     }
 
-    loadSnapshot()
+    loadResearch()
     return () => { active = false }
   }, [symbol, period])
 
   const handleSwitchSymbol = (nextSym) => {
-    setSymbol(nextSym)
-    setSearchParams({ symbol: nextSym })
+    const clean = nextSym.trim().toUpperCase()
+    if (!clean) return
+    setSymbol(clean)
+    setTickerInput(clean)
+    setSearchParams({ symbol: clean })
   }
 
-  const tech = snapshot?.technical
-  const fund = snapshot?.fundamentals
-  const risk = snapshot?.risk
-  const news = snapshot?.news || []
+  const tech = researchData?.technical
+  const fund = researchData?.fundamentals
+  const risk = researchData?.risk
+  const agentNews = researchData?.agents?.news?.articles || []
+  const newsList = agentNews.length ? agentNews : (researchData?.news || [])
 
   const riskColor =
     risk?.risk_level === 'HIGH'
@@ -102,30 +117,55 @@ export default function DashboardPage() {
       : 'success'
 
   return (
-    <Box sx={{ minHeight: '100vh', backgroundColor: 'background.default', pb: 8 }}>
-      {/* Top Navigation */}
+    <Box
+      sx={{
+        height: '100vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: 'background.default',
+      }}
+    >
+      {/* Top Navigation Bar */}
       <Box
         sx={{
-          px: { xs: 2, md: 6 },
-          py: 1.5,
+          px: { xs: 2, md: 3 },
+          py: 1.25,
           borderBottom: '1px solid',
           borderColor: 'divider',
           backgroundColor: '#ffffff',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
           gap: 1.5,
+          flexShrink: 0,
         }}
       >
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
           <Typography
-            sx={{ fontWeight: 800, fontSize: '1.15rem', color: 'primary.main', cursor: 'pointer' }}
+            sx={{ fontWeight: 800, fontSize: '1.1rem', color: 'primary.main', cursor: 'pointer' }}
             onClick={() => navigate('/')}
           >
             StockSage
           </Typography>
-          <Stack direction="row" spacing={0.8} sx={{ display: { xs: 'none', sm: 'flex' } }}>
+
+          <TextField
+            size="small"
+            value={tickerInput}
+            onChange={(e) => setTickerInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSwitchSymbol(tickerInput)}
+            placeholder="Ticker (e.g. INFY)"
+            sx={{ width: 155, '& .MuiInputBase-root': { height: 32, fontSize: '0.8rem' } }}
+            InputProps={{
+              endAdornment: (
+                <IconButton size="small" onClick={() => handleSwitchSymbol(tickerInput)}>
+                  <SearchIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              ),
+            }}
+          />
+
+          <Stack direction="row" spacing={0.6} sx={{ display: { xs: 'none', md: 'flex' } }}>
             {QUICK_SWITCH.map((s) => (
               <Chip
                 key={s}
@@ -135,269 +175,296 @@ export default function DashboardPage() {
                 color={symbol.toUpperCase() === s ? 'primary' : 'default'}
                 variant={symbol.toUpperCase() === s ? 'filled' : 'outlined'}
                 onClick={() => handleSwitchSymbol(s)}
-                sx={{ fontWeight: 600, fontSize: '0.72rem' }}
+                sx={{ fontWeight: 600, fontSize: '0.7rem', height: 26 }}
               />
             ))}
           </Stack>
         </Stack>
 
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate('/search')}
-          sx={{ borderColor: '#cbd5e1', color: 'text.secondary' }}
-        >
-          New Search
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          {!isDesktop && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<ChatBubbleOutlineIcon />}
+              onClick={() => setMobileChatOpen(true)}
+            >
+              Agent Chat
+            </Button>
+          )}
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/search')}
+            sx={{ borderColor: '#cbd5e1', color: 'text.secondary' }}
+          >
+            Search
+          </Button>
+        </Stack>
       </Box>
 
-      <Container maxWidth="lg" sx={{ pt: 4 }}>
-        {/* Header */}
-        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 2 }}>
-          <Box>
-            <Chip
-              icon={<ShowChartIcon sx={{ fontSize: 16 }} />}
-              label="Week 3 · Quantitative Math & Interactive Chart"
-              size="small"
-              sx={{ mb: 1, backgroundColor: '#eff6ff', color: '#1a56db', fontWeight: 600, border: '1px solid #bfdbfe' }}
-            />
-            <Typography variant="h3" sx={{ fontSize: { xs: '1.8rem', md: '2.4rem' }, color: 'text.primary' }}>
-              {snapshot?.resolved?.company_name || symbol.toUpperCase()}
-              <Box component="span" sx={{ fontSize: '1rem', color: 'text.secondary', ml: 1.5, fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
-                {snapshot?.resolved?.yfinance_symbol || `${symbol.toUpperCase()}.NS`}
+      {/* Main Split Workspace: Left Charts & Reports | Right Agent Chat Sidebar */}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* LEFT PANE: Diagrams, Charts, Metrics & News Reports */}
+        <Box
+          sx={{
+            flex: 1,
+            overflowY: 'auto',
+            p: { xs: 2, md: 3 },
+          }}
+        >
+          {/* Stock Header */}
+          <Box sx={{ mb: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Chip
+                icon={<ShowChartIcon sx={{ fontSize: 15 }} />}
+                label="Milestone 2 · Multi-Agent Stock Research Workspace"
+                size="small"
+                sx={{ mb: 1, backgroundColor: '#eff6ff', color: '#1a56db', fontWeight: 600, border: '1px solid #bfdbfe' }}
+              />
+              <Typography variant="h3" sx={{ fontSize: { xs: '1.65rem', md: '2.15rem' }, color: 'text.primary' }}>
+                {researchData?.resolved?.company_name || symbol.toUpperCase()}
+                <Box component="span" sx={{ fontSize: '0.95rem', color: 'text.secondary', ml: 1.5, fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
+                  {researchData?.resolved?.yfinance_symbol || `${symbol.toUpperCase()}.NS`}
+                </Box>
+              </Typography>
+            </Box>
+
+            {tech?.latest_price != null && (
+              <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+                <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>
+                  ₹{tech.latest_price.toLocaleString('en-IN')}
+                </Typography>
+                {tech.period_return_pct != null && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: 700,
+                      color: tech.period_return_pct >= 0 ? '#059669' : '#dc2626',
+                    }}
+                  >
+                    {tech.period_return_pct >= 0 ? '+' : ''}
+                    {tech.period_return_pct}% ({period.toUpperCase()} return)
+                  </Typography>
+                )}
               </Box>
-            </Typography>
+            )}
           </Box>
 
-          {tech?.latest_price != null && (
-            <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-              <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary' }}>
-                ₹{tech.latest_price.toLocaleString('en-IN')}
-              </Typography>
-              {tech.period_return_pct != null && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: 700,
-                    color: tech.period_return_pct >= 0 ? '#059669' : '#dc2626',
-                  }}
-                >
-                  {tech.period_return_pct >= 0 ? '+' : ''}
-                  {tech.period_return_pct}% ({period.toUpperCase()} return)
-                </Typography>
-              )}
-            </Box>
+          {error && (
+            <Alert severity="error" sx={{ mb: 3, borderRadius: '10px' }}>
+              {error} — Ensure the FastAPI backend is running on {import.meta.env.VITE_API_URL || 'http://localhost:8000'}.
+            </Alert>
           )}
-        </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 3, borderRadius: '10px' }}>
-            {error} — Ensure the FastAPI backend is running on {import.meta.env.VITE_API_URL || 'http://localhost:8000'}.
-          </Alert>
-        )}
-
-        {loading ? (
-          <Card sx={{ p: 6, textAlign: 'center', borderRadius: '16px', mb: 4 }}>
-            <GearAnimation />
-            <Typography variant="h6" sx={{ mt: 2, fontWeight: 700 }}>
-              Fetching NSE OHLCV & Computing Indicators...
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-              Running SMA, EMA, RSI, MACD, Fundamental Ratios & Risk Metrics for {symbol.toUpperCase()}
-            </Typography>
-          </Card>
-        ) : snapshot ? (
-          <>
-            {/* Interactive Stock Price & Technical Indicator Chart */}
-            <Card sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', mb: 3 }}>
-              <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-                <StockChart
-                  chartData={tech?.chart_data || []}
-                  symbol={snapshot.resolved.yfinance_symbol}
-                  period={period}
-                  onPeriodChange={setPeriod}
-                />
-                <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#94a3b8' }}>
-                  {tech?.disclaimer}
-                </Typography>
-              </CardContent>
+          {loading ? (
+            <Card sx={{ p: 5, textAlign: 'center', borderRadius: '16px' }}>
+              <GearAnimation />
+              <Typography variant="h6" sx={{ mt: 2, fontWeight: 700 }}>
+                Running Multi-Agent Research Pipeline...
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                Fetching NSE OHLCV, computing ratios & invoking Fundamental, Technical, News, and Risk agents for {symbol.toUpperCase()}
+              </Typography>
             </Card>
-
-            {/* Technical, Fundamental, and Risk Metric Cards */}
-            <Grid container spacing={2.5} sx={{ mb: 3 }}>
-              {/* Technical Summary */}
-              <Grid item xs={12} md={4}>
-                <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
-                  <CardContent sx={{ p: 2.5 }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-                      <Typography variant="h6" sx={{ fontSize: '1rem' }}>Technical Indicators</Typography>
-                      <Chip
-                        label={(tech?.signals?.overall_trend || 'N/A').replace('_', ' ').toUpperCase()}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        sx={{ fontSize: '0.68rem', fontWeight: 700 }}
-                      />
-                    </Stack>
-                    {[
-                      ['SMA (20)', fmtVal(tech?.indicators?.sma20, '')],
-                      ['SMA (50)', fmtVal(tech?.indicators?.sma50, '')],
-                      ['EMA (20)', fmtVal(tech?.indicators?.ema20, '')],
-                      ['RSI (14)', fmtVal(tech?.indicators?.rsi14)],
-                      ['MACD / Signal', `${fmtVal(tech?.indicators?.macd)} / ${fmtVal(tech?.indicators?.macd_signal)}`],
-                      ['Annualized Volatility', fmtVal(tech?.indicators?.annualized_volatility_pct, '%')],
-                    ].map(([label, value]) => (
-                      <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.7, borderBottom: '1px solid #f1f5f9' }}>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>{label}</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{value}</Typography>
-                      </Box>
-                    ))}
-                    <Box sx={{ mt: 1.5 }}>
-                      {(tech?.signals?.conditions || []).map((c) => (
-                        <Typography key={c.indicator} variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.4 }}>
-                          • <strong>{c.indicator}:</strong> {c.detail}
-                        </Typography>
-                      ))}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Fundamental Ratios */}
-              <Grid item xs={12} md={4}>
-                <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
-                  <CardContent sx={{ p: 2.5 }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-                      <Typography variant="h6" sx={{ fontSize: '1rem' }}>Fundamental Ratios</Typography>
-                      <Chip
-                        label={fund?.sector || 'NSE Equity'}
-                        size="small"
-                        sx={{ fontSize: '0.68rem', fontWeight: 600 }}
-                      />
-                    </Stack>
-                    {[
-                      ['Market Cap', fmtMarketCap(fund?.valuation?.market_cap)],
-                      ['P/E Ratio', fmtVal(fund?.valuation?.pe_ratio)],
-                      ['P/B Ratio', fmtVal(fund?.valuation?.pb_ratio)],
-                      ['ROE', fmtVal(fund?.profitability?.roe_pct, '%')],
-                      ['Net Margin', fmtVal(fund?.profitability?.net_margin_pct, '%')],
-                      ['Operating Margin', fmtVal(fund?.profitability?.operating_margin_pct, '%')],
-                      ['Debt / Equity', fmtVal(fund?.financial_stability?.debt_to_equity)],
-                      ['Rev Growth (YoY)', fmtVal(fund?.growth?.revenue_growth_yoy_pct, '%')],
-                    ].map(([label, value]) => (
-                      <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.6, borderBottom: '1px solid #f1f5f9' }}>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>{label}</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{value}</Typography>
-                      </Box>
-                    ))}
-                    {fund?.data_quality?.warnings?.length > 0 && (
-                      <Typography variant="caption" sx={{ display: 'block', mt: 1.2, color: '#b45309' }}>
-                        Note: {fund.data_quality.warnings[0]}
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Quantitative Risk */}
-              <Grid item xs={12} md={4}>
-                <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
-                  <CardContent sx={{ p: 2.5 }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-                      <Typography variant="h6" sx={{ fontSize: '1rem' }}>Quantitative Risk</Typography>
-                      <Chip
-                        label={`${risk?.risk_level || 'N/A'} RISK`}
-                        size="small"
-                        color={riskColor}
-                        sx={{ fontSize: '0.68rem', fontWeight: 700 }}
-                      />
-                    </Stack>
-                    {[
-                      ['Max Drawdown', fmtVal(risk?.metrics?.max_drawdown_pct, '%')],
-                      ['Peak → Trough', `${fmtVal(risk?.metrics?.peak_price, '')} → ${fmtVal(risk?.metrics?.trough_price, '')}`],
-                      ['Current Drawdown', fmtVal(risk?.metrics?.current_drawdown_pct, '%')],
-                      ['95% Daily VaR', fmtVal(risk?.metrics?.var_95_daily_pct, '%')],
-                      ['Sharpe Proxy (Rf 6.5%)', fmtVal(risk?.metrics?.sharpe_proxy)],
-                      ['Volatility (Ann.)', fmtVal(risk?.metrics?.annualized_volatility_pct, '%')],
-                    ].map(([label, value]) => (
-                      <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.7, borderBottom: '1px solid #f1f5f9' }}>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem' }}>{label}</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{value}</Typography>
-                      </Box>
-                    ))}
-                    <Box sx={{ mt: 1.5 }}>
-                      {(risk?.risk_factors || []).map((rf) => (
-                        <Typography key={rf} variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.4 }}>
-                          • {rf}
-                        </Typography>
-                      ))}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-
-            {/* News Sources Preview (yfinance + Google RSS) */}
-            <Card sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', mb: 3 }}>
-              <CardContent sx={{ p: 2.5 }}>
-                <Typography variant="h6" sx={{ fontSize: '1rem', mb: 1.5 }}>
-                  Recent News Sources (yfinance + Google News RSS)
-                </Typography>
-                {news.length === 0 ? (
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    No recent news headlines retrieved for this symbol.
-                  </Typography>
-                ) : (
-                  <Stack divider={<Divider />} spacing={1.2}>
-                    {news.slice(0, 6).map((item, idx) => (
-                      <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, pt: idx ? 1 : 0 }}>
-                        <Box>
-                          <Link
-                            href={item.source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            underline="hover"
-                            sx={{ fontWeight: 600, fontSize: '0.88rem', color: 'text.primary', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
-                          >
-                            {item.title}
-                            <OpenInNewIcon sx={{ fontSize: 13 }} />
-                          </Link>
-                          <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-                            {item.publisher} · {item.published_at ? item.published_at.slice(0, 10) : 'Recent'} ({item.source_type})
-                          </Typography>
-                        </Box>
-                      </Box>
-                    ))}
-                  </Stack>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
-
-        {/* Week 4 LLM Agents Roadmap Preview */}
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5, color: 'text.primary' }}>
-          Next Up — Week 4 Multi-Agent AI Reasoning Layer
-        </Typography>
-        <Grid container spacing={2}>
-          {WEEK4_AGENTS.map((stage) => (
-            <Grid item xs={12} sm={6} key={stage.name}>
-              <Card variant="outlined" sx={{ height: '100%', borderRadius: '12px', backgroundColor: '#ffffff' }}>
-                <CardContent sx={{ p: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{stage.name}</Typography>
-                    <Chip label={stage.status} size="small" sx={{ fontSize: '0.68rem', height: 20, fontWeight: 600 }} />
-                  </Box>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
-                    {stage.desc}
+          ) : researchData ? (
+            <>
+              {/* Interactive Price & Indicator Chart */}
+              <Card sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', mb: 2.5 }}>
+                <CardContent sx={{ p: { xs: 1.5, md: 2.5 } }}>
+                  <StockChart
+                    chartData={tech?.chart_data || []}
+                    symbol={researchData.resolved.yfinance_symbol}
+                    period={period}
+                    onPeriodChange={setPeriod}
+                  />
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#94a3b8' }}>
+                    {tech?.disclaimer}
                   </Typography>
                 </CardContent>
               </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </Container>
+
+              {/* Quantitative Reports Grid */}
+              <Grid container spacing={2} sx={{ mb: 2.5 }}>
+                {/* Technical Report */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
+                        <Typography variant="h6" sx={{ fontSize: '0.95rem' }}>Technical Report</Typography>
+                        <Chip
+                          label={(tech?.signals?.overall_trend || 'N/A').replace('_', ' ').toUpperCase()}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          sx={{ fontSize: '0.65rem', fontWeight: 700, height: 21 }}
+                        />
+                      </Stack>
+                      {[
+                        ['SMA (20)', fmtVal(tech?.indicators?.sma20)],
+                        ['SMA (50)', fmtVal(tech?.indicators?.sma50)],
+                        ['EMA (20)', fmtVal(tech?.indicators?.ema20)],
+                        ['RSI (14)', fmtVal(tech?.indicators?.rsi14)],
+                        ['MACD / Signal', `${fmtVal(tech?.indicators?.macd)} / ${fmtVal(tech?.indicators?.macd_signal)}`],
+                        ['Volatility (Ann.)', fmtVal(tech?.indicators?.annualized_volatility_pct, '%')],
+                      ].map(([label, value]) => (
+                        <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.6, borderBottom: '1px solid #f1f5f9' }}>
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>{label}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>{value}</Typography>
+                        </Box>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Fundamental Report */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
+                        <Typography variant="h6" sx={{ fontSize: '0.95rem' }}>Fundamental Report</Typography>
+                        <Chip label={fund?.sector || 'NSE'} size="small" sx={{ fontSize: '0.65rem', fontWeight: 600, height: 21 }} />
+                      </Stack>
+                      {[
+                        ['Market Cap', fmtMarketCap(fund?.valuation?.market_cap)],
+                        ['P/E Ratio', fmtVal(fund?.valuation?.pe_ratio)],
+                        ['P/B Ratio', fmtVal(fund?.valuation?.pb_ratio)],
+                        ['ROE', fmtVal(fund?.profitability?.roe_pct, '%')],
+                        ['Net Margin', fmtVal(fund?.profitability?.net_margin_pct, '%')],
+                        ['Debt / Equity', fmtVal(fund?.financial_stability?.debt_to_equity)],
+                        ['Rev Growth (YoY)', fmtVal(fund?.growth?.revenue_growth_yoy_pct, '%')],
+                      ].map(([label, value]) => (
+                        <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.55, borderBottom: '1px solid #f1f5f9' }}>
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>{label}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>{value}</Typography>
+                        </Box>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Risk Report */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: '100%', borderRadius: '14px', border: '1px solid', borderColor: 'divider' }}>
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
+                        <Typography variant="h6" sx={{ fontSize: '0.95rem' }}>Risk Assessment</Typography>
+                        <Chip
+                          label={`${risk?.risk_level || 'N/A'} RISK`}
+                          size="small"
+                          color={riskColor}
+                          sx={{ fontSize: '0.65rem', fontWeight: 700, height: 21 }}
+                        />
+                      </Stack>
+                      {[
+                        ['Max Drawdown', fmtVal(risk?.metrics?.max_drawdown_pct, '%')],
+                        ['Peak → Trough', `${fmtVal(risk?.metrics?.peak_price)} → ${fmtVal(risk?.metrics?.trough_price)}`],
+                        ['Current Drawdown', fmtVal(risk?.metrics?.current_drawdown_pct, '%')],
+                        ['95% Daily VaR', fmtVal(risk?.metrics?.var_95_daily_pct, '%')],
+                        ['Sharpe Proxy', fmtVal(risk?.metrics?.sharpe_proxy)],
+                        ['Volatility (Ann.)', fmtVal(risk?.metrics?.annualized_volatility_pct, '%')],
+                      ].map(([label, value]) => (
+                        <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.6, borderBottom: '1px solid #f1f5f9' }}>
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>{label}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>{value}</Typography>
+                        </Box>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+
+              {/* News Citations Report */}
+              <Card sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', mb: 2 }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+                    <Typography variant="h6" sx={{ fontSize: '0.98rem' }}>
+                      News & Source Citations (yfinance + Google RSS)
+                    </Typography>
+                    {researchData?.agents?.news?.overall_sentiment && (
+                      <Chip
+                        label={`OVERALL: ${researchData.agents.news.overall_sentiment.toUpperCase()}`}
+                        size="small"
+                        sx={{ fontSize: '0.68rem', fontWeight: 700 }}
+                      />
+                    )}
+                  </Stack>
+
+                  {newsList.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      No recent news headlines retrieved for this symbol.
+                    </Typography>
+                  ) : (
+                    <Stack divider={<Divider />} spacing={1.2}>
+                      {newsList.slice(0, 8).map((item, idx) => {
+                        const sColor = sentimentColor(item.sentiment)
+                        return (
+                          <Box key={idx} sx={{ pt: idx ? 1 : 0 }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1.5}>
+                              <Box>
+                                <Link
+                                  href={item.source_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  underline="hover"
+                                  sx={{ fontWeight: 600, fontSize: '0.86rem', color: 'text.primary', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                                >
+                                  {item.title}
+                                  <OpenInNewIcon sx={{ fontSize: 13 }} />
+                                </Link>
+                                {item.takeaway && item.takeaway !== item.title && (
+                                  <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.78rem', mt: 0.3 }}>
+                                    {item.takeaway}
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mt: 0.3 }}>
+                                  {item.publisher} · {item.published_at ? item.published_at.slice(0, 10) : 'Recent'}
+                                </Typography>
+                              </Box>
+                              {item.sentiment && (
+                                <Chip
+                                  label={item.sentiment.toUpperCase()}
+                                  size="small"
+                                  sx={{ height: 20, fontSize: '0.64rem', fontWeight: 700, bgcolor: sColor.bg, color: sColor.fg, flexShrink: 0 }}
+                                />
+                              )}
+                            </Stack>
+                          </Box>
+                        )
+                      })}
+                    </Stack>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
+        </Box>
+
+        {/* RIGHT SIDEBAR: Agent Chat UI (Desktop fixed pane, Mobile drawer) */}
+        {isDesktop ? (
+          <Box
+            sx={{
+              width: { lg: 410, xl: 450 },
+              borderLeft: '1px solid',
+              borderColor: 'divider',
+              height: '100%',
+              flexShrink: 0,
+            }}
+          >
+            <AgentChatSidebar symbol={symbol} researchData={researchData} loading={loading} />
+          </Box>
+        ) : (
+          <Drawer
+            anchor="right"
+            open={mobileChatOpen}
+            onClose={() => setMobileChatOpen(false)}
+            PaperProps={{ sx: { width: '90vw', maxWidth: 420 } }}
+          >
+            <AgentChatSidebar symbol={symbol} researchData={researchData} loading={loading} />
+          </Drawer>
+        )}
+      </Box>
     </Box>
   )
 }
