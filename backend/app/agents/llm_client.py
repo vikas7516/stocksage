@@ -1,21 +1,21 @@
-"""Shared Groq LLM helper for structured JSON outputs and grounded follow-up chat."""
+"""Shared Gemini API client for structured JSON agent outputs and follow-up chat."""
 
 import json
 import re
 import time
-from typing import Dict, List, Optional, Tuple, Type, TypeVar
-from groq import Groq
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
+import httpx
 from pydantic import BaseModel
 
 from app.core.config import settings
 
 T = TypeVar("T", bound=BaseModel)
 
-# Ordered fallback models in the Groq org if the primary hits its 1,000 OTPM free-tier cap
-_FALLBACK_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+_MODEL_ALIASES = ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"]
 
 
-def _strip_think_and_fences(raw: str) -> str:
+def _strip_fences(raw: str) -> str:
     cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -24,98 +24,134 @@ def _strip_think_and_fences(raw: str) -> str:
 
 
 def _candidate_models() -> List[str]:
-    models = [settings.groq_model]
-    for m in _FALLBACK_MODELS:
+    models = [settings.gemini_model]
+    for m in _MODEL_ALIASES:
         if m not in models:
             models.append(m)
     return models
 
 
-def call_groq_structured(
+def _extract_answer_text(resp_json: Dict[str, Any]) -> str:
+    candidates = resp_json.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    # Skip Gemini thought blocks so thinking tokens never mix with final output
+    text_parts = [p.get("text", "") for p in parts if not p.get("thought") and p.get("text")]
+    return "\n".join(text_parts).strip()
+
+
+def call_llm_structured(
     system_prompt: str,
     user_prompt: str,
     schema_cls: Type[T],
-    temperature: float = 0.2,
-    max_tokens: int = 900,
+    temperature: float = 0.25,
+    max_tokens: int = 1200,
 ) -> Tuple[Optional[T], Optional[str], int]:
     """
-    Calls Groq chat completions in JSON mode and validates against `schema_cls`.
-    Automatically falls back to secondary Groq models if the primary hits a 429 rate limit.
+    Calls Gemini API (`gemini-3.1-flash-lite`) with JSON output mode and low thinking level,
+    validating against `schema_cls`.
     Returns (validated_model_or_None, error_message_or_None, latency_ms).
     """
     start = time.perf_counter()
-    if not settings.groq_api_key:
-        return None, "GROQ_API_KEY is not configured.", 0
+    if not settings.gemini_api_key:
+        return None, "GEMINI_API_KEY is not configured.", 0
 
-    client = Groq(api_key=settings.groq_api_key, max_retries=0)
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingLevel": "low"},
+        },
+    }
+
     last_err = None
+    with httpx.Client(timeout=20.0) as client:
+        for model_id in _candidate_models():
+            url = f"{_GEMINI_BASE}/{model_id}:generateContent"
+            try:
+                resp = client.post(
+                    url,
+                    headers={"x-goog-api-key": settings.gemini_api_key, "Content-Type": "application/json"},
+                    json=payload,
+                )
+                if resp.status_code != 200:
+                    last_err = f"HTTP {resp.status_code}: {resp.text[:250]}"
+                    if resp.status_code in (404, 429, 503):
+                        continue
+                    break
 
-    for model_id in _candidate_models():
-        try:
-            resp = client.chat.completions.create(
-                model=model_id,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            raw_content = resp.choices[0].message.content or "{}"
-            parsed = json.loads(_strip_think_and_fences(raw_content))
-            validated = schema_cls.model_validate(parsed)
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            return validated, None, elapsed_ms
-        except Exception as exc:
-            last_err = str(exc)
-            # Retry with next Groq model on 429 rate-limit or JSON generation failure
-            if "429" in last_err or "rate_limit" in last_err.lower() or "json_validate_failed" in last_err:
+                raw_text = _extract_answer_text(resp.json())
+                parsed = json.loads(_strip_fences(raw_text or "{}"))
+                validated = schema_cls.model_validate(parsed)
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                return validated, None, elapsed_ms
+            except Exception as exc:
+                last_err = str(exc)
                 continue
-            break
 
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     return None, last_err, elapsed_ms
 
 
-def call_groq_chat(
+def call_llm_chat(
     system_prompt: str,
     messages: List[Dict[str, str]],
-    temperature: float = 0.3,
-    max_tokens: int = 600,
+    temperature: float = 0.35,
+    max_tokens: int = 900,
 ) -> Tuple[str, Optional[str], int]:
-    """Calls Groq for grounded conversational follow-ups in the Agent Sidebar."""
+    """Calls Gemini API for grounded conversational follow-ups in the Agent Sidebar."""
     start = time.perf_counter()
-    if not settings.groq_api_key:
+    if not settings.gemini_api_key:
         return (
-            "GROQ_API_KEY is not configured on the backend, so live AI chat replies are unavailable.",
-            "Missing GROQ_API_KEY",
+            "GEMINI_API_KEY is not configured on the backend, so live AI replies are unavailable.",
+            "Missing GEMINI_API_KEY",
             0,
         )
 
-    client = Groq(api_key=settings.groq_api_key, max_retries=0)
-    last_err = None
+    contents = [
+        {
+            "role": "model" if m["role"] == "assistant" else "user",
+            "parts": [{"text": m["content"]}],
+        }
+        for m in messages
+    ]
 
-    for model_id in _candidate_models():
-        try:
-            resp = client.chat.completions.create(
-                model=model_id,
-                messages=[{"role": "system", "content": system_prompt}, *messages],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            content = _strip_think_and_fences(resp.choices[0].message.content or "")
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
-            return content, None, elapsed_ms
-        except Exception as exc:
-            last_err = str(exc)
-            if "429" in last_err or "rate_limit" in last_err.lower():
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingLevel": "low"},
+        },
+    }
+
+    last_err = None
+    with httpx.Client(timeout=20.0) as client:
+        for model_id in _candidate_models():
+            url = f"{_GEMINI_BASE}/{model_id}:generateContent"
+            try:
+                resp = client.post(
+                    url,
+                    headers={"x-goog-api-key": settings.gemini_api_key, "Content-Type": "application/json"},
+                    json=payload,
+                )
+                if resp.status_code != 200:
+                    last_err = f"HTTP {resp.status_code}: {resp.text[:250]}"
+                    if resp.status_code in (404, 429, 503):
+                        continue
+                    break
+
+                answer = _extract_answer_text(resp.json())
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                return answer or "No response returned.", None, elapsed_ms
+            except Exception as exc:
+                last_err = str(exc)
                 continue
-            break
 
     elapsed_ms = int((time.perf_counter() - start) * 1000)
-    return (
-        "Groq free-tier rate limit reached (tokens/min). Wait a few seconds and try your question again.",
-        last_err,
-        elapsed_ms,
-    )
+    return f"Unable to reach Gemini API ({settings.gemini_model}): {last_err}", last_err, elapsed_ms

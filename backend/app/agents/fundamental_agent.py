@@ -1,10 +1,10 @@
-"""Fundamental Analysis Agent: interprets computed financial ratios, growth, and stability."""
+"""Fundamental Analysis Agent: translates financial statements & ratios into clear investor insights."""
 
 import json
 from typing import Any, Dict, List, Literal
 from pydantic import BaseModel, Field
 
-from app.agents.llm_client import call_groq_structured
+from app.agents.llm_client import call_llm_structured
 
 
 class _FundamentalLLMShape(BaseModel):
@@ -29,22 +29,22 @@ class FundamentalAgentOutput(BaseModel):
 
 
 SYSTEM_PROMPT = """You are the Fundamental Analysis Agent for StockSage (an NSE equity research advisory platform, NOT a broker).
-Analyze ONLY the provided verified financial metrics and multi-year historical statements. Never invent numbers.
-Write clearly in plain English so an investor understands WHAT the numbers mean, not just what the numbers are.
-Return ONLY valid JSON matching this schema:
+Read the computed financial ratios and multi-year statements and explain what they mean for an everyday investor in clear, plain English.
+Do NOT just list raw numbers back — explain WHY they matter (e.g., whether margins show pricing power, whether debt is safe, whether growth justifies the P/E multiple). Never invent figures.
+Return ONLY valid JSON:
 {
-  "summary": "4-5 sentence explanation covering multi-year revenue/earnings trajectory, profitability (ROE, margins), balance-sheet debt stability, and valuation (P/E, P/B).",
+  "summary": "4-5 clear sentences explaining multi-year revenue & profit trajectory, profitability efficiency (ROE & margins), balance-sheet safety (debt & liquidity), and whether current valuation (P/E, P/B) looks cheap, fair, or expensive.",
   "valuation_assessment": "undervalued | fairly_valued | richly_valued | insufficient_data",
   "financial_health": "strong | moderate | weak | insufficient_data",
-  "investor_takeaway": "1-2 sentence practical advisory takeaway explaining who this fundamental profile suits and what to watch.",
-  "key_highlights": ["bullet 1", "bullet 2", "bullet 3"],
+  "investor_takeaway": "1-2 sentence practical advisory insight explaining what kind of investor this business fits and what fundamental catalyst to watch next.",
+  "key_highlights": ["concise plain-English takeaway 1", "takeaway 2", "takeaway 3"],
   "data_gaps": ["any missing or inconsistent financial fields"]
 }"""
 
 
 def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutput:
     user_prompt = f"Analyze these computed fundamental metrics:\n{json.dumps(fundamentals, separators=(',', ':'))}"
-    parsed, err, elapsed_ms = call_groq_structured(SYSTEM_PROMPT, user_prompt, _FundamentalLLMShape)
+    parsed, err, elapsed_ms = call_llm_structured(SYSTEM_PROMPT, user_prompt, _FundamentalLLMShape)
 
     if parsed is not None:
         return FundamentalAgentOutput(
@@ -58,7 +58,6 @@ def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutpu
             execution_time_ms=elapsed_ms,
         )
 
-    # Deterministic fallback if LLM is unavailable
     val = fundamentals.get("valuation", {})
     prof = fundamentals.get("profitability", {})
     stab = fundamentals.get("financial_stability", {})
@@ -78,11 +77,12 @@ def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutpu
         summary=summary,
         valuation_assessment="fairly_valued" if pe is not None else "insufficient_data",
         financial_health="strong" if (de is not None and de < 0.5) else "moderate",
+        investor_takeaway="Add GEMINI_API_KEY in backend environment to unlock full AI interpretation of financial statements.",
         key_highlights=[
             f"Trailing P/E: {pe}" if pe is not None else "P/E unavailable",
             f"ROE: {roe}%" if roe is not None else "ROE unavailable",
             f"Net Margin: {prof.get('net_margin_pct')}%" if prof.get("net_margin_pct") is not None else "Net margin unavailable",
         ],
-        data_gaps=[f"Missing: {', '.join(missing)}"] if missing else ([f"LLM fallback: {err}"] if err else []),
+        data_gaps=([f"Missing: {', '.join(missing)}"] if missing else []) + ([f"Fallback reason: {err}"] if err else []),
         execution_time_ms=elapsed_ms,
     )

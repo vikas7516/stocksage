@@ -328,7 +328,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
             </Typography>
           </Stack>
           <Chip
-            label={agents?.model || 'qwen/qwen3.8-27b'}
+            label={agents?.model || 'gemini-3.1-flash-lite'}
             size="small"
             sx={{ height: 20, fontSize: '0.66rem', fontWeight: 600, bgcolor: '#eff6ff', color: '#1a56db' }}
           />

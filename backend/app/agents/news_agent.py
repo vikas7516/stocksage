@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
-from app.agents.llm_client import call_groq_structured
+from app.agents.llm_client import call_llm_structured
 
 
 class _ArticleClassification(BaseModel):
@@ -43,16 +43,16 @@ class NewsAgentOutput(BaseModel):
 
 
 SYSTEM_PROMPT = """You are the News & Sentiment Analysis Agent for StockSage.
-Given numbered recent headlines (from Yahoo Finance & Google News RSS), summarize key corporate events (earnings, acquisitions, orders, regulatory developments), classify sentiment per article, and note any conflicting reports.
+Given numbered recent headlines (from Yahoo Finance & Google News RSS), summarize key corporate events (earnings, deals, acquisitions, regulatory developments), explain why they matter to investors, classify sentiment per article, and flag conflicting reports.
 Never invent headlines or URLs.
-Return ONLY valid JSON matching this schema:
+Return ONLY valid JSON:
 {
-  "summary": "3-4 sentence synthesis of recent news flow and sentiment drivers.",
+  "summary": "3-4 clear sentences explaining the main news drivers, corporate catalysts, and overall investor sentiment.",
   "overall_sentiment": "positive | negative | neutral | mixed",
   "classifications": [
-    {"index": 0, "sentiment": "positive | negative | neutral", "event_type": "Earnings / Regulatory / Corporate / Analyst / Market", "takeaway": "1 concise sentence"}
+    {"index": 0, "sentiment": "positive | negative | neutral", "event_type": "Earnings | Regulatory | Corporate | Analyst | Market", "takeaway": "1 concise sentence explaining why this headline matters"}
   ],
-  "conflicting_reports": ["list any opposing headlines or uncertainties, or empty array"]
+  "conflicting_reports": ["any opposing headlines or uncertainties, or empty array"]
 }"""
 
 
@@ -77,11 +77,9 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
         for idx, item in enumerate(news_items)
     ]
     user_prompt = f"Analyze recent news for {symbol}:\n{json.dumps(numbered, separators=(',', ':'))}"
-    parsed, err, elapsed_ms = call_groq_structured(SYSTEM_PROMPT, user_prompt, _NewsLLMShape)
+    parsed, err, elapsed_ms = call_llm_structured(SYSTEM_PROMPT, user_prompt, _NewsLLMShape)
 
-    class_map = {}
-    if parsed is not None:
-        class_map = {c.index: c for c in parsed.classifications}
+    class_map = {c.index: c for c in parsed.classifications} if parsed is not None else {}
 
     enriched: List[ArticleSentiment] = []
     for idx, item in enumerate(news_items):
@@ -114,6 +112,6 @@ def run_news_agent(symbol: str, news_items: List[Dict[str, Any]]) -> NewsAgentOu
         summary=f"Retrieved {len(enriched)} recent headlines for {symbol} from yfinance and Google News RSS.",
         overall_sentiment="neutral",
         articles=enriched,
-        conflicting_reports=[f"LLM fallback: {err}"] if err else [],
+        conflicting_reports=[f"Fallback reason: {err}"] if err else [],
         execution_time_ms=elapsed_ms,
     )

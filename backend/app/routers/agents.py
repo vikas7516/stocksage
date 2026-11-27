@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.agents.fundamental_agent import FundamentalAgentOutput, run_fundamental_agent
-from app.agents.llm_client import call_groq_chat
+from app.agents.llm_client import call_llm_chat
 from app.agents.news_agent import NewsAgentOutput, run_news_agent
 from app.agents.risk_agent import RiskAgentOutput, run_risk_agent
 from app.agents.technical_agent import TechnicalAgentOutput, run_technical_agent
@@ -83,10 +83,15 @@ def run_all_individual_agents(
     risk_data = assess_risk_metrics(window_df, symbol=yf_symbol, fundamentals=fundamental_data)
     news_data = fetch_stock_news(symbol=yf_symbol, company_name=company_name)
 
-    # Run sequentially with compact payloads to avoid Groq free-tier burst 429 throttling
-    fund_out = run_fundamental_agent(fundamental_data)
-    tech_out = run_technical_agent(technical_data)
-    news_out = run_news_agent(yf_symbol, news_data)
+    # Run Fundamental, Technical, News in parallel (Gemini 3.1 Flash Lite supports 250k TPM / 15 RPM)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_fund = pool.submit(run_fundamental_agent, fundamental_data)
+        f_tech = pool.submit(run_technical_agent, technical_data)
+        f_news = pool.submit(run_news_agent, yf_symbol, news_data)
+
+        fund_out = f_fund.result()
+        tech_out = f_tech.result()
+        news_out = f_news.result()
 
     risk_out = run_risk_agent(
         risk_metrics=risk_data,
@@ -103,7 +108,7 @@ def run_all_individual_agents(
         risk=risk_data,
         news=news_data,
         agents=AgentOutputsBundle(
-            model=settings.groq_model,
+            model=settings.gemini_model,
             fundamental=fund_out,
             technical=tech_out,
             news=news_out,
@@ -165,10 +170,10 @@ def agent_chat_followup(req: AgentChatRequest):
     ]
     recent_history.append({"role": "user", "content": req.question})
 
-    reply, _, latency_ms = call_groq_chat(system_prompt, recent_history)
+    reply, _, latency_ms = call_llm_chat(system_prompt, recent_history)
     return AgentChatResponse(
         agent=req.agent_focus,
-        model=settings.groq_model,
+        model=settings.gemini_model,
         reply=reply,
         latency_ms=latency_ms,
     )

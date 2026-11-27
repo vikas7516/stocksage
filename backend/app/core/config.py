@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     supabase_jwt_secret: Optional[str] = None
     frontend_url: str = "http://localhost:5173"
     environment: str = "development"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-3.1-flash-lite"
     groq_api_key: Optional[str] = None
     groq_model: str = "qwen/qwen3.8-27b"
 

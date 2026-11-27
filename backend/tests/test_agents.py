@@ -2,13 +2,29 @@
 
 from unittest.mock import patch
 from app.agents.fundamental_agent import FundamentalAgentOutput, run_fundamental_agent
+from app.agents.llm_client import _extract_answer_text
 from app.agents.technical_agent import TechnicalAgentOutput, run_technical_agent
 from app.agents.news_agent import NewsAgentOutput, run_news_agent
 from app.agents.risk_agent import RiskAgentOutput, run_risk_agent
 
 
+def test_gemini_thought_parts_are_filtered():
+    resp = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "internal reasoning...", "thought": True},
+                        {"text": '{"summary":"clean"}'},
+                    ]
+                }
+            }
+        ]
+    }
+    assert _extract_answer_text(resp) == '{"summary":"clean"}'
+
+
 def test_fundamental_agent_structured_output():
-    mock_parsed = FundamentalAgentOutput.__annotations__
     from app.agents.fundamental_agent import _FundamentalLLMShape
 
     fake_llm = _FundamentalLLMShape(
@@ -19,7 +35,7 @@ def test_fundamental_agent_structured_output():
         key_highlights=["ROE 29%", "Net Margin 17%"],
         data_gaps=[],
     )
-    with patch("app.agents.fundamental_agent.call_groq_structured", return_value=(fake_llm, None, 310)):
+    with patch("app.agents.fundamental_agent.call_llm_structured", return_value=(fake_llm, None, 310)):
         out = run_fundamental_agent({"symbol": "INFY.NS", "valuation": {"pe_ratio": 25.0}})
         assert isinstance(out, FundamentalAgentOutput)
         assert out.status == "success"
@@ -28,7 +44,7 @@ def test_fundamental_agent_structured_output():
 
 
 def test_technical_agent_fallback_preserves_disclaimer():
-    with patch("app.agents.technical_agent.call_groq_structured", return_value=(None, "timeout", 50)):
+    with patch("app.agents.technical_agent.call_llm_structured", return_value=(None, "timeout", 50)):
         out = run_technical_agent({
             "symbol": "INFY.NS",
             "latest_price": 1151.3,
@@ -58,7 +74,7 @@ def test_news_agent_preserves_urls_and_dates():
         "published_at": "2026-11-26T10:00:00+00:00",
         "source_type": "google_news_rss",
     }]
-    with patch("app.agents.news_agent.call_groq_structured", return_value=(fake_llm, None, 250)):
+    with patch("app.agents.news_agent.call_llm_structured", return_value=(fake_llm, None, 250)):
         out = run_news_agent("INFY.NS", articles)
         assert isinstance(out, NewsAgentOutput)
         assert out.overall_sentiment == "positive"
@@ -76,7 +92,7 @@ def test_risk_agent_structured_output():
         alternative_scenarios=["Margin expansion on AI deals", "US BFSI slowdown"],
         limitations=["3-month window"],
     )
-    with patch("app.agents.risk_agent.call_groq_structured", return_value=(fake_llm, None, 220)):
+    with patch("app.agents.risk_agent.call_llm_structured", return_value=(fake_llm, None, 220)):
         out = run_risk_agent({"symbol": "INFY.NS", "risk_level": "MODERATE"}, {}, {}, {})
         assert isinstance(out, RiskAgentOutput)
         assert out.risk_level == "MODERATE"
