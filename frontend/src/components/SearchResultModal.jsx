@@ -17,6 +17,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import { API_URL } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 
 const STATUS_STEPS = [
@@ -57,11 +58,10 @@ export default function SearchResultModal({ open, onClose, companyName }) {
     const fetchPreview = async () => {
       const cleanSym = (companyName || '').trim()
       const fallbackSymbol = cleanSym ? `${cleanSym.toUpperCase()}.NS` : 'INFY.NS'
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
       try {
         const res = await fetch(
-          `${apiUrl}/api/analysis/technical?symbol=${encodeURIComponent(cleanSym)}&period=3mo`
+          `${API_URL}/api/analysis/technical?symbol=${encodeURIComponent(cleanSym)}&period=3mo`
         )
         if (res.ok) {
           const json = await res.json()

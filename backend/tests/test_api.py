@@ -16,6 +16,24 @@ def test_health_endpoint():
     assert res.json()["status"] == "ok"
 
 
+def test_cors_allows_render_frontend_origin():
+    origin = "https://stocksage-frontend-0wht.onrender.com"
+    res = client.get("/health", headers={"Origin": origin})
+    assert res.status_code == 200
+    assert res.headers.get("access-control-allow-origin") == origin
+
+    preflight = client.options(
+        "/api/agents/chat",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers.get("access-control-allow-origin") == origin
+
+
 def test_public_search_resolves_nse_stocks():
     res = client.get("/api/search/public?q=inf")
     assert res.status_code == 200

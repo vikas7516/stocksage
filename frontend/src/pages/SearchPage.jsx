@@ -17,6 +17,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import SearchResultModal from '../components/SearchResultModal'
+import { API_URL } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 
 const FALLBACK_STOCKS = [
@@ -59,10 +60,9 @@ export default function SearchPage() {
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       setSearching(true)
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       try {
         const res = await fetch(
-          `${apiUrl}/api/search/public?q=${encodeURIComponent(q)}&limit=8`,
+          `${API_URL}/api/search/public?q=${encodeURIComponent(q)}&limit=8`,
           { signal: controller.signal }
         )
         if (res.ok) {

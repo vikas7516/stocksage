@@ -26,6 +26,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import GearAnimation from '../components/GearAnimation'
 import StockChart from '../components/StockChart'
 import AgentChatSidebar from '../components/AgentChatSidebar'
+import { API_URL } from '../lib/api'
 
 const QUICK_SWITCH = ['INFY', 'TCS', 'RELIANCE', 'HDFCBANK', 'TATAMOTORS']
 
@@ -70,10 +71,9 @@ export default function DashboardPage() {
     const loadResearch = async () => {
       setLoading(true)
       setError('')
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       try {
         const res = await fetch(
-          `${apiUrl}/api/agents/analyze?symbol=${encodeURIComponent(symbol)}&period=${period}`
+          `${API_URL}/api/agents/analyze?symbol=${encodeURIComponent(symbol)}&period=${period}`
         )
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}))
@@ -219,7 +219,7 @@ export default function DashboardPage() {
             <Box>
               <Chip
                 icon={<ShowChartIcon sx={{ fontSize: 15 }} />}
-                label="Milestone 2 · Multi-Agent Stock Research Workspace"
+                label="NSE Equity Research · Multi-Agent Advisory"
                 size="small"
                 sx={{ mb: 1, backgroundColor: '#eff6ff', color: '#1a56db', fontWeight: 600, border: '1px solid #bfdbfe' }}
               />
@@ -254,7 +254,7 @@ export default function DashboardPage() {
 
           {error && (
             <Alert severity="error" sx={{ mb: 3, borderRadius: '10px' }}>
-              {error} — Ensure the FastAPI backend is running on {import.meta.env.VITE_API_URL || 'http://localhost:8000'}.
+              {error} — Ensure the FastAPI backend is running on {API_URL}.
             </Alert>
           )}
 

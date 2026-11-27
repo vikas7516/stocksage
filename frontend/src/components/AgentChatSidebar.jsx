@@ -21,6 +21,7 @@ import NewspaperIcon from '@mui/icons-material/Newspaper'
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import { API_URL } from '../lib/api'
 
 const AGENT_META = {
   fundamental: {
@@ -262,7 +263,6 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
     if (questionText === undefined) setChatInput('')
     setSending(true)
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
     try {
       const compactContext = researchData
         ? {
@@ -280,7 +280,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
           }
         : {}
 
-      const res = await fetch(`${apiUrl}/api/agents/chat`, {
+      const res = await fetch(`${API_URL}/api/agents/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
