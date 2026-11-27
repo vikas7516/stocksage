@@ -15,6 +15,7 @@ def test_fundamental_agent_structured_output():
         summary="Strong margins and low debt with reasonable valuation.",
         valuation_assessment="fairly_valued",
         financial_health="strong",
+        investor_takeaway="Balanced valuation supported by strong cash generation and low debt.",
         key_highlights=["ROE 29%", "Net Margin 17%"],
         data_gaps=[],
     )
@@ -70,6 +71,7 @@ def test_risk_agent_structured_output():
 
     fake_llm = _RiskLLMShape(
         summary="Moderate volatility with technicals bullish against slower revenue growth.",
+        advisory_stance="Moderate risk profile; balance upward trend against margin headwinds.",
         conflicting_findings=["Technical uptrend contrasts with flat YoY revenue growth."],
         alternative_scenarios=["Margin expansion on AI deals", "US BFSI slowdown"],
         limitations=["3-month window"],

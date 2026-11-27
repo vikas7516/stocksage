@@ -12,6 +12,7 @@ class _TechnicalLLMShape(BaseModel):
     summary: str
     trend_direction: Literal["upward", "moderately_upward", "mixed", "moderately_downward", "downward"]
     momentum_signal: str
+    investor_takeaway: str
     key_observations: List[str] = Field(default_factory=list)
 
 
@@ -21,6 +22,7 @@ class TechnicalAgentOutput(BaseModel):
     summary: str
     trend_direction: str
     momentum_signal: str
+    investor_takeaway: str = ""
     key_observations: List[str] = Field(default_factory=list)
     disclaimer: str = TECHNICAL_DISCLAIMER
     execution_time_ms: int = 0
@@ -28,12 +30,13 @@ class TechnicalAgentOutput(BaseModel):
 
 SYSTEM_PROMPT = """You are the Technical Analysis Agent for StockSage.
 Interpret ONLY the provided computed indicators (SMA-20, SMA-50, EMA-20, RSI-14, MACD, Volatility) and condition flags.
-Never guarantee future price returns; describe historical market conditions objectively.
+Never guarantee future price returns; explain what the historical indicators signal right now.
 Return ONLY valid JSON matching this schema:
 {
-  "summary": "3-5 sentence explanation of moving-average alignment, RSI momentum, MACD signal, and volatility.",
+  "summary": "4 sentence explanation of moving-average alignment, RSI momentum, MACD signal, and volatility.",
   "trend_direction": "upward | moderately_upward | mixed | moderately_downward | downward",
   "momentum_signal": "short label e.g. Neutral Momentum / Bullish Crossover / Overbought Caution",
+  "investor_takeaway": "1-2 sentence practical interpretation of the chart trend and key support/resistance averages.",
   "key_observations": ["observation 1", "observation 2", "observation 3"]
 }"""
 
@@ -56,6 +59,7 @@ def run_technical_agent(technical: Dict[str, Any]) -> TechnicalAgentOutput:
             summary=parsed.summary,
             trend_direction=parsed.trend_direction,
             momentum_signal=parsed.momentum_signal,
+            investor_takeaway=parsed.investor_takeaway,
             key_observations=parsed.key_observations,
             disclaimer=TECHNICAL_DISCLAIMER,
             execution_time_ms=elapsed_ms,

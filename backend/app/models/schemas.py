@@ -96,6 +96,7 @@ class FundamentalAnalysisResponse(BaseModel):
     profitability: Dict[str, Any]
     growth: Dict[str, Any]
     financial_stability: Dict[str, Any]
+    historical_financials: List[Dict[str, Any]] = []
     data_quality: Dict[str, Any]
 
 

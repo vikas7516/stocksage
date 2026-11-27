@@ -9,6 +9,7 @@ from app.agents.llm_client import call_groq_structured
 
 class _RiskLLMShape(BaseModel):
     summary: str
+    advisory_stance: str
     conflicting_findings: List[str] = Field(default_factory=list)
     alternative_scenarios: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
@@ -19,6 +20,7 @@ class RiskAgentOutput(BaseModel):
     status: str = "success"
     risk_level: str
     summary: str
+    advisory_stance: str = ""
     conflicting_findings: List[str] = Field(default_factory=list)
     alternative_scenarios: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
@@ -31,8 +33,9 @@ Explicitly detect disagreements across agents (e.g. positive technical trend vs 
 Return ONLY valid JSON matching this schema:
 {
   "summary": "3-4 sentence risk & reliability assessment grounded in the computed drawdown, volatility, and cross-agent agreement.",
+  "advisory_stance": "1-2 sentence balanced risk-aware advisory stance weighing upside vs downside without guaranteeing returns.",
   "conflicting_findings": ["specific disagreements across agents, or empty array if aligned"],
-  "alternative_scenarios": ["upside/downside scenario 1", "scenario 2"],
+  "alternative_scenarios": ["upside scenario", "downside scenario"],
   "limitations": ["missing data, short window, or uncertainty notes"]
 }"""
 
@@ -73,6 +76,7 @@ def run_risk_agent(
             status="success",
             risk_level=risk_level,
             summary=parsed.summary,
+            advisory_stance=parsed.advisory_stance,
             conflicting_findings=parsed.conflicting_findings,
             alternative_scenarios=parsed.alternative_scenarios,
             limitations=parsed.limitations or risk_metrics.get("limitations", []),

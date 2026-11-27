@@ -11,6 +11,7 @@ class _FundamentalLLMShape(BaseModel):
     summary: str
     valuation_assessment: Literal["undervalued", "fairly_valued", "richly_valued", "insufficient_data"]
     financial_health: Literal["strong", "moderate", "weak", "insufficient_data"]
+    investor_takeaway: str
     key_highlights: List[str] = Field(default_factory=list)
     data_gaps: List[str] = Field(default_factory=list)
 
@@ -21,18 +22,21 @@ class FundamentalAgentOutput(BaseModel):
     summary: str
     valuation_assessment: str
     financial_health: str
+    investor_takeaway: str = ""
     key_highlights: List[str] = Field(default_factory=list)
     data_gaps: List[str] = Field(default_factory=list)
     execution_time_ms: int = 0
 
 
-SYSTEM_PROMPT = """You are the Fundamental Analysis Agent for StockSage (an NSE equity research platform, NOT a broker).
-Analyze ONLY the provided verified financial metrics. Never invent numbers or external facts.
+SYSTEM_PROMPT = """You are the Fundamental Analysis Agent for StockSage (an NSE equity research advisory platform, NOT a broker).
+Analyze ONLY the provided verified financial metrics and multi-year historical statements. Never invent numbers.
+Write clearly in plain English so an investor understands WHAT the numbers mean, not just what the numbers are.
 Return ONLY valid JSON matching this schema:
 {
-  "summary": "3-5 sentence analytical explanation covering valuation (P/E, P/B), profitability (ROE, margins), revenue/earnings growth, and debt stability.",
+  "summary": "4-5 sentence explanation covering multi-year revenue/earnings trajectory, profitability (ROE, margins), balance-sheet debt stability, and valuation (P/E, P/B).",
   "valuation_assessment": "undervalued | fairly_valued | richly_valued | insufficient_data",
   "financial_health": "strong | moderate | weak | insufficient_data",
+  "investor_takeaway": "1-2 sentence practical advisory takeaway explaining who this fundamental profile suits and what to watch.",
   "key_highlights": ["bullet 1", "bullet 2", "bullet 3"],
   "data_gaps": ["any missing or inconsistent financial fields"]
 }"""
@@ -48,6 +52,7 @@ def run_fundamental_agent(fundamentals: Dict[str, Any]) -> FundamentalAgentOutpu
             summary=parsed.summary,
             valuation_assessment=parsed.valuation_assessment,
             financial_health=parsed.financial_health,
+            investor_takeaway=parsed.investor_takeaway,
             key_highlights=parsed.key_highlights,
             data_gaps=parsed.data_gaps or fundamentals.get("data_quality", {}).get("warnings", []),
             execution_time_ms=elapsed_ms,

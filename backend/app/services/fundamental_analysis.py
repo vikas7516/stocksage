@@ -67,16 +67,39 @@ def compute_yoy_growth(current_value: Optional[float], previous_value: Optional[
 
 
 def _extract_row_values(statement_df: Any, candidate_keys: List[str]) -> List[Optional[float]]:
-    """Extracts up to 2 most recent period values for the first matching line item."""
+    """Extracts up to 3 most recent period values for the first matching line item."""
     if statement_df is None or getattr(statement_df, "empty", True):
         return []
     for key in candidate_keys:
         if key in statement_df.index:
             row = statement_df.loc[key]
-            # Sort columns descending by date if possible
-            vals = [_safe_num(v) for v in row.values[:2]]
+            vals = [_safe_num(v) for v in row.values[:3]]
             return vals
     return []
+
+
+def _extract_historical_trend(statement_df: Any, rev_keys: List[str], ni_keys: List[str]) -> List[Dict[str, Any]]:
+    """Builds multi-year revenue & net income history for historical comparison."""
+    if statement_df is None or getattr(statement_df, "empty", True):
+        return []
+
+    rev_row = next((statement_df.loc[k] for k in rev_keys if k in statement_df.index), None)
+    ni_row = next((statement_df.loc[k] for k in ni_keys if k in statement_df.index), None)
+    if rev_row is None and ni_row is None:
+        return []
+
+    history: List[Dict[str, Any]] = []
+    for col in list(statement_df.columns)[:4]:
+        period_label = col.strftime("%Y-%m") if hasattr(col, "strftime") else str(col)[:10]
+        rev_val = _safe_num(rev_row[col]) if rev_row is not None else None
+        ni_val = _safe_num(ni_row[col]) if ni_row is not None else None
+        if rev_val is not None or ni_val is not None:
+            history.append({
+                "period": period_label,
+                "revenue": rev_val,
+                "net_income": ni_val,
+            })
+    return history
 
 
 def compute_fundamentals_from_inputs(
@@ -96,6 +119,7 @@ def compute_fundamentals_from_inputs(
     market_cap: Optional[float] = None,
     dividend_yield_pct: Optional[float] = None,
     info_fallbacks: Optional[Dict[str, Optional[float]]] = None,
+    historical_financials: Optional[List[Dict[str, Any]]] = None,
     company_name: Optional[str] = None,
     sector: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -178,6 +202,7 @@ def compute_fundamentals_from_inputs(
             "debt_to_equity": debt_to_equity,
             "current_ratio": current_ratio,
         },
+        "historical_financials": historical_financials or [],
         "data_quality": {
             "missing_fields": missing_fields,
             "warnings": warnings,
@@ -200,9 +225,12 @@ def fetch_and_compute_fundamentals(symbol: str) -> Dict[str, Any]:
     except Exception:
         balance_sheet = None
 
-    rev_vals = _extract_row_values(income_stmt, ["Total Revenue", "Operating Revenue"])
-    ni_vals = _extract_row_values(income_stmt, ["Net Income", "Net Income Common Stockholders"])
+    rev_keys = ["Total Revenue", "Operating Revenue"]
+    ni_keys = ["Net Income", "Net Income Common Stockholders"]
+    rev_vals = _extract_row_values(income_stmt, rev_keys)
+    ni_vals = _extract_row_values(income_stmt, ni_keys)
     op_vals = _extract_row_values(income_stmt, ["Operating Income", "EBIT"])
+    hist_fin = _extract_historical_trend(income_stmt, rev_keys, ni_keys)
 
     debt_vals = _extract_row_values(balance_sheet, ["Total Debt", "Long Term Debt And Capital Lease Obligation"])
     eq_vals = _extract_row_values(balance_sheet, ["Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"])
@@ -247,6 +275,7 @@ def fetch_and_compute_fundamentals(symbol: str) -> Dict[str, Any]:
         market_cap=market_cap,
         dividend_yield_pct=dividend_yield_pct,
         info_fallbacks=info_fallbacks,
+        historical_financials=hist_fin,
         company_name=info.get("shortName") or info.get("longName"),
         sector=info.get("sector"),
     )

@@ -8,12 +8,27 @@ import xml.etree.ElementTree as ET
 import httpx
 import yfinance as yf
 
+# Filter out SEO stock-quote landing pages that carry no actual news
+_QUOTE_SPAM_PHRASES = (
+    "share price today",
+    "share price live",
+    "stock price & chart",
+    "stock price, news, quote and history",
+    "live nse/bse",
+    "live nse:",
+)
 
-def _fetch_yfinance_news(symbol: str, max_items: int = 6) -> List[Dict[str, Any]]:
+
+def _is_relevant_article(title: str) -> bool:
+    t = title.lower()
+    return not any(phrase in t for phrase in _QUOTE_SPAM_PHRASES)
+
+
+def _fetch_yfinance_news(symbol: str, max_items: int = 5) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     try:
         raw = yf.Ticker(symbol).news or []
-        for entry in raw[:max_items]:
+        for entry in raw:
             content = entry.get("content") or entry
             title = content.get("title") or entry.get("title")
             link = (
@@ -33,7 +48,7 @@ def _fetch_yfinance_news(symbol: str, max_items: int = 6) -> List[Dict[str, Any]
             elif isinstance(pub_raw, str):
                 published_at = pub_raw
 
-            if title and link:
+            if title and link and _is_relevant_article(title):
                 items.append({
                     "title": title,
                     "source_url": link,
@@ -41,6 +56,8 @@ def _fetch_yfinance_news(symbol: str, max_items: int = 6) -> List[Dict[str, Any]
                     "published_at": published_at,
                     "source_type": "yfinance_news",
                 })
+            if len(items) >= max_items:
+                break
     except Exception:
         pass
     return items
@@ -48,8 +65,10 @@ def _fetch_yfinance_news(symbol: str, max_items: int = 6) -> List[Dict[str, Any]
 
 def _fetch_google_rss_news(query: str, max_items: int = 8) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
+    clean_query = query.replace("Limited", "").replace("Ltd", "").strip()
+    search_q = f'"{clean_query}" (earnings OR results OR acquisition OR deal OR dividend OR profit OR NSE) when:30d'
     rss_url = (
-        f"https://news.google.com/rss/search?q={quote_plus(query + ' NSE stock')}&hl=en-IN&gl=IN&ceid=IN:en"
+        f"https://news.google.com/rss/search?q={quote_plus(search_q)}&hl=en-IN&gl=IN&ceid=IN:en"
     )
     try:
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
@@ -57,7 +76,7 @@ def _fetch_google_rss_news(query: str, max_items: int = 8) -> List[Dict[str, Any
             if resp.status_code != 200:
                 return items
             root = ET.fromstring(resp.text)
-            for item_el in root.findall("./channel/item")[:max_items]:
+            for item_el in root.findall("./channel/item"):
                 title = (item_el.findtext("title") or "").strip()
                 link = (item_el.findtext("link") or "").strip()
                 pub_date_raw = (item_el.findtext("pubDate") or "").strip()
@@ -71,7 +90,7 @@ def _fetch_google_rss_news(query: str, max_items: int = 8) -> List[Dict[str, Any
                     except Exception:
                         published_at = pub_date_raw
 
-                if title and link:
+                if title and link and _is_relevant_article(title):
                     items.append({
                         "title": title,
                         "source_url": link,
@@ -79,19 +98,21 @@ def _fetch_google_rss_news(query: str, max_items: int = 8) -> List[Dict[str, Any
                         "published_at": published_at,
                         "source_type": "google_news_rss",
                     })
+                if len(items) >= max_items:
+                    break
     except Exception:
         pass
     return items
 
 
-def fetch_stock_news(symbol: str, company_name: str, max_total: int = 10) -> List[Dict[str, Any]]:
-    """Combines yfinance news and Google News RSS, deduplicating by title."""
-    yf_items = _fetch_yfinance_news(symbol, max_items=6)
-    rss_items = _fetch_google_rss_news(company_name or symbol, max_items=8)
+def fetch_stock_news(symbol: str, company_name: str, max_total: int = 8) -> List[Dict[str, Any]]:
+    """Combines Google News RSS corporate events and yfinance news, filtering quote spam."""
+    rss_items = _fetch_google_rss_news(company_name or symbol, max_items=6)
+    yf_items = _fetch_yfinance_news(symbol, max_items=4)
 
     seen_titles = set()
     merged: List[Dict[str, Any]] = []
-    for item in yf_items + rss_items:
+    for item in rss_items + yf_items:
         norm = item["title"].lower().strip()
         if norm not in seen_titles:
             seen_titles.add(norm)

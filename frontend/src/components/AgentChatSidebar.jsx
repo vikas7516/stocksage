@@ -4,7 +4,6 @@ import {
   Box,
   Chip,
   CircularProgress,
-  Collapse,
   Divider,
   IconButton,
   InputAdornment,
@@ -19,8 +18,6 @@ import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined'
 import ShowChartIcon from '@mui/icons-material/ShowChart'
 import NewspaperIcon from '@mui/icons-material/Newspaper'
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { API_URL } from '../lib/api'
 
 const AGENT_META = {
@@ -57,23 +54,22 @@ const AGENT_META = {
 }
 
 const QUICK_PROMPTS = [
-  'Any conflicting signals across agents?',
-  'Is valuation cheap or expensive?',
-  'Summarize top risk factors',
+  'Any conflicting signals?',
+  'Explain valuation & debt',
+  'Summarize key risks',
 ]
 
-function AgentMessageCard({ msg }) {
-  const [expanded, setExpanded] = useState(false)
+function AgentStreamEntry({ msg }) {
   const meta = AGENT_META[msg.agent] || AGENT_META.all
 
   if (msg.role === 'user') {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', py: 0.5 }}>
         <Paper
           elevation={0}
           sx={{
             px: 2,
-            py: 1.2,
+            py: 1.1,
             maxWidth: '85%',
             borderRadius: '14px 14px 4px 14px',
             background: 'linear-gradient(135deg, #1a56db 0%, #7c3aed 100%)',
@@ -88,99 +84,89 @@ function AgentMessageCard({ msg }) {
     )
   }
 
-  const hasDetails = (msg.bullets && msg.bullets.length > 0) || (msg.warnings && msg.warnings.length > 0)
-
   return (
-    <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'flex-start' }}>
-      <Avatar
-        sx={{
-          width: 30,
-          height: 30,
-          bgcolor: meta.bg,
-          color: meta.color,
-          border: `1px solid ${meta.color}30`,
-          mt: 0.3,
-        }}
-      >
-        {meta.icon}
-      </Avatar>
-
-      <Paper
-        elevation={0}
-        sx={{
-          flex: 1,
-          p: 1.75,
-          borderRadius: '4px 14px 14px 14px',
-          border: '1px solid',
-          borderColor: 'divider',
-          backgroundColor: '#ffffff',
-        }}
-      >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75, gap: 1, flexWrap: 'wrap' }}>
-          <Typography variant="caption" sx={{ fontWeight: 700, color: meta.color, fontSize: '0.76rem' }}>
+    <Box
+      sx={{
+        pl: 1.75,
+        pr: 0.5,
+        py: 1.5,
+        borderLeft: `3px solid ${meta.color}`,
+        borderBottom: '1px solid #e2e8f0',
+      }}
+    >
+      {/* Agent Header */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1, gap: 1, flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Avatar sx={{ width: 24, height: 24, bgcolor: meta.bg, color: meta.color }}>
+            {meta.icon}
+          </Avatar>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: meta.color, fontSize: '0.8rem' }}>
             {meta.label}
           </Typography>
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            {msg.badge && (
-              <Chip
-                label={msg.badge}
-                size="small"
-                sx={{
-                  height: 19,
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  bgcolor: meta.bg,
-                  color: meta.color,
-                }}
-              />
-            )}
-            {msg.latencyMs > 0 && (
-              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.66rem' }}>
-                {msg.latencyMs}ms
-              </Typography>
-            )}
-          </Stack>
         </Stack>
 
-        <Typography variant="body2" sx={{ color: 'text.primary', fontSize: '0.835rem', lineHeight: 1.55, whiteSpace: 'pre-line' }}>
-          {msg.content}
-        </Typography>
+        <Stack direction="row" spacing={0.6} alignItems="center">
+          {msg.badge && (
+            <Chip
+              label={msg.badge}
+              size="small"
+              sx={{ height: 20, fontSize: '0.64rem', fontWeight: 700, bgcolor: meta.bg, color: meta.color }}
+            />
+          )}
+          {msg.latencyMs > 0 && (
+            <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.66rem' }}>
+              {msg.latencyMs}ms
+            </Typography>
+          )}
+        </Stack>
+      </Stack>
 
-        {hasDetails && (
-          <Box sx={{ mt: 1 }}>
-            <Box
-              onClick={() => setExpanded((v) => !v)}
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.4,
-                cursor: 'pointer',
-                color: 'primary.main',
-                fontSize: '0.74rem',
-                fontWeight: 600,
-              }}
-            >
-              {expanded ? 'Hide details' : 'Show key points'}
-              {expanded ? <ExpandLessIcon sx={{ fontSize: 15 }} /> : <ExpandMoreIcon sx={{ fontSize: 15 }} />}
-            </Box>
+      {/* Main Analysis */}
+      <Typography variant="body2" sx={{ color: 'text.primary', fontSize: '0.84rem', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+        {msg.content}
+      </Typography>
 
-            <Collapse in={expanded}>
-              <Box sx={{ mt: 1, pt: 1, borderTop: '1px dashed #e2e8f0' }}>
-                {(msg.bullets || []).map((b, i) => (
-                  <Typography key={i} variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.4, lineHeight: 1.45 }}>
-                    • {b}
-                  </Typography>
-                ))}
-                {(msg.warnings || []).map((w, i) => (
-                  <Typography key={`w-${i}`} variant="caption" sx={{ display: 'block', color: '#b45309', mt: 0.4, lineHeight: 1.45 }}>
-                    ⚠ {w}
-                  </Typography>
-                ))}
-              </Box>
-            </Collapse>
-          </Box>
-        )}
-      </Paper>
+      {/* Investor Takeaway / Advisory Stance */}
+      {msg.takeaway && (
+        <Box
+          sx={{
+            mt: 1.2,
+            px: 1.4,
+            py: 0.9,
+            borderRadius: '6px',
+            bgcolor: meta.bg,
+          }}
+        >
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, color: meta.color, mb: 0.2, fontSize: '0.7rem' }}>
+            KEY TAKEAWAY
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.primary', fontSize: '0.8rem', lineHeight: 1.5, fontWeight: 500 }}>
+            {msg.takeaway}
+          </Typography>
+        </Box>
+      )}
+
+      {/* Key Bullets (Openly Visible) */}
+      {msg.bullets && msg.bullets.length > 0 && (
+        <Box sx={{ mt: 1.1 }}>
+          {msg.bullets.map((b, i) => (
+            <Typography key={i} variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.35, lineHeight: 1.45, fontSize: '0.76rem' }}>
+              • {b}
+            </Typography>
+          ))}
+        </Box>
+      )}
+
+      {/* Conflicts / Data Gaps / Caveats */}
+      {msg.warnings && msg.warnings.length > 0 && (
+        <Box sx={{ mt: 0.9 }}>
+          {msg.warnings.map((w, i) => (
+            <Typography key={i} variant="caption" sx={{ display: 'block', color: '#b45309', mt: 0.3, lineHeight: 1.4, fontSize: '0.74rem' }}>
+              ⚠ {w}
+            </Typography>
+          ))}
+        </Box>
+      )}
     </Box>
   )
 }
@@ -192,7 +178,6 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
   const [followUps, setFollowUps] = useState([])
   const scrollBottomRef = useRef(null)
 
-  // Reset follow-up chat when switching stocks
   useEffect(() => {
     setFollowUps([])
   }, [symbol])
@@ -205,8 +190,9 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
           id: 'fund-init',
           role: 'assistant',
           agent: 'fundamental',
-          badge: `${agents.fundamental.valuation_assessment?.replace('_', ' ').toUpperCase()}`,
+          badge: `${agents.fundamental.valuation_assessment?.replace('_', ' ').toUpperCase()} · ${agents.fundamental.financial_health?.toUpperCase()}`,
           content: agents.fundamental.summary,
+          takeaway: agents.fundamental.investor_takeaway,
           bullets: agents.fundamental.key_highlights,
           warnings: agents.fundamental.data_gaps,
           latencyMs: agents.fundamental.execution_time_ms,
@@ -217,6 +203,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
           agent: 'technical',
           badge: `${agents.technical.trend_direction?.replace('_', ' ').toUpperCase()}`,
           content: agents.technical.summary,
+          takeaway: agents.technical.investor_takeaway,
           bullets: agents.technical.key_observations,
           warnings: [agents.technical.disclaimer],
           latencyMs: agents.technical.execution_time_ms,
@@ -237,6 +224,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
           agent: 'risk',
           badge: `${agents.risk.risk_level} RISK`,
           content: agents.risk.summary,
+          takeaway: agents.risk.advisory_stance,
           bullets: agents.risk.alternative_scenarios,
           warnings: [...(agents.risk.conflicting_findings || []), ...(agents.risk.limitations || [])],
           latencyMs: agents.risk.execution_time_ms,
@@ -251,8 +239,10 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
       : allMessages.filter((m) => m.role === 'user' || m.agent === agentFilter || m.agent === 'all')
 
   useEffect(() => {
-    scrollBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [followUps.length, agents?.model])
+    if (followUps.length > 0) {
+      scrollBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [followUps.length])
 
   const sendQuestion = async (questionText) => {
     const q = (questionText ?? chatInput).trim()
@@ -325,16 +315,16 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#f8fafc',
+        backgroundColor: '#ffffff',
       }}
     >
       {/* Sidebar Header */}
-      <Box sx={{ px: 2.5, py: 2, backgroundColor: '#ffffff', borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ px: 2.5, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <SmartToyOutlinedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 700, fontSize: '0.98rem' }}>
-              Agent Research Chat
+              Agent Analysis Feed
             </Typography>
           </Stack>
           <Chip
@@ -367,13 +357,13 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
         </Stack>
       </Box>
 
-      {/* Scrollable Chat Messages */}
-      <Box sx={{ flex: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.75 }}>
+      {/* Scrollable Structured Agent Feed */}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 2.5, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {loading ? (
           <Box sx={{ py: 8, textAlign: 'center' }}>
             <CircularProgress size={28} sx={{ mb: 1.5 }} />
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-              Agents are independently analyzing {symbol.toUpperCase()}...
+              Agents are analyzing {symbol.toUpperCase()}...
             </Typography>
             <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5 }}>
               Fundamental · Technical · News & Sentiment · Risk
@@ -384,11 +374,11 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
             Search or select a stock to view structured agent explanations.
           </Typography>
         ) : (
-          visibleMessages.map((msg) => <AgentMessageCard key={msg.id} msg={msg} />)
+          visibleMessages.map((msg) => <AgentStreamEntry key={msg.id} msg={msg} />)
         )}
 
         {sending && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
             <CircularProgress size={14} />
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               {AGENT_META[agentFilter]?.label || 'Agent'} is typing...
@@ -400,9 +390,9 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
 
       <Divider />
 
-      {/* Quick Prompts + Chat Input */}
-      <Box sx={{ p: 2, backgroundColor: '#ffffff' }}>
-        <Stack direction="row" spacing={0.6} sx={{ mb: 1.2, overflowX: 'auto', pb: 0.3 }}>
+      {/* Follow-Up Chat Bar */}
+      <Box sx={{ p: 2, backgroundColor: '#f8fafc' }}>
+        <Stack direction="row" spacing={0.6} sx={{ mb: 1.1, overflowX: 'auto', pb: 0.3 }}>
           {QUICK_PROMPTS.map((qp) => (
             <Chip
               key={qp}
@@ -414,7 +404,7 @@ export default function AgentChatSidebar({ symbol, researchData, loading }) {
               sx={{
                 fontSize: '0.7rem',
                 height: 23,
-                bgcolor: '#f8fafc',
+                bgcolor: '#ffffff',
                 border: '1px solid #e2e8f0',
                 flexShrink: 0,
               }}
